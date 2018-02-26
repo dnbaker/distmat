@@ -45,12 +45,13 @@ public:
     }
     ~DistanceMatrix() {std::free(data_);}
     size_t num_entries() const {return nelem_ * (nelem_ - 1);}
+#define ARRAY_ACCESS(row, column) (((nelem_ - 1) * row - ((row * (row - 1)) >> 1)) /* Start of row */ + column - 1)
     value_type &operator()(size_t row, size_t column) {
-        if(column == row) return default_value_; // This changes the default value for all elements in the matrix.
-        if(column > row) row ^= column, column ^= row, row ^= column; // If one is bigger, swap.
-        assert(((nelem_ * row - ((row * (row - 1)) >> 1)) /* Start of row */ + column - row - 1) < num_entries());
-        return data_[(nelem_ * row - ((row * (row - 1)) >> 1)) /* Start of row */ + column - row - 1];
+        if(__builtin_expect(row == column, 0)) return default_value_;
+        if(row < column) return data_[ARRAY_ACCESS(row, column)];
+        else             return data_[ARRAY_ACCESS(column, row)];
     }
+#undef ARRAY_ACCESS
     const value_type &operator()(size_t row, size_t column) const {
         return static_cast<const value_type &>(operator()(row, column));
     }
