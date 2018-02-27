@@ -8,13 +8,6 @@
 
 namespace dm {
 
-struct free_deleter{
-    template <typename T>
-    void operator()(T *p) const {
-        std::free(const_cast<std::remove_const_t<T>*>(p));
-    }
-};
-
 template<typename ArithType=float,
          size_t DefaultValue=0,
          typename=std::enable_if_t<std::is_arithmetic_v<ArithType>>
@@ -70,6 +63,7 @@ public:
         data_ = tmp;
         std::fill(data_, data_ + num_entries(), static_cast<value_type>(-1));
     }
+    // TODO: Add serialization.
 };
 
 } // namespace dm
