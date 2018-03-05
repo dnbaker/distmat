@@ -5,8 +5,39 @@
 #include <memory>
 #include <cstdlib>
 #include <stdexcept>
+#include <cstdint>
+#include "unistd.h"
 
 namespace dm {
+
+template<typename ArithType>
+class MAGIC_NUMBER {
+    const char *name() {
+        throw std::runtime_error("NotImplemented");
+        return "NOTIMPLEMENTED";
+    }
+};
+
+#define DEC_MAGIC(type, STR) \
+    template<>\
+    class MAGIC_NUMBER<type> {\
+        const char *name() const {\
+            return "DM::" STR;\
+        }\
+    }
+
+DEC_MAGIC(float, "float");
+DEC_MAGIC(double,"double");
+DEC_MAGIC(uint8_t,"uint8_t");
+DEC_MAGIC(uint16_t,"uint16_t");
+DEC_MAGIC(uint32_t,"uint32_t");
+DEC_MAGIC(uint64_t,"uint64_t");
+DEC_MAGIC(int8_t,"int8_t");
+DEC_MAGIC(int16_t,"int16_t");
+DEC_MAGIC(int32_t,"int32_t");
+DEC_MAGIC(int64_t,"int64_t");
+
+#undef DEC_MAGIC
 
 template<typename ArithType=float,
          size_t DefaultValue=0,
@@ -16,7 +47,11 @@ class DistanceMatrix {
     ArithType  *data_;
     size_t     nelem_;
     ArithType   default_value_;
+    static const MAGIC_NUMBER<ArithType> magic_;
 public:
+    const char *magic_string() const {
+        return magic_.name();
+    }
     using value_type = ArithType;
     using pointer_type = ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
@@ -62,6 +97,31 @@ public:
         nelem_ = new_size;
         data_ = tmp;
         std::fill(data_, data_ + num_entries(), static_cast<value_type>(-1));
+    }
+    void write(const std::string &path) const {
+        return this->write(path.data());
+    }
+    void write(const char *path) const {
+        std::FILE *fp = std::fopen(path, "wb");
+        std::fputs(magic_string(), fp);
+        const int fn = fileno(fp);
+        ::write(fn, &nelem_, sizeof(nelem_));
+        ::write(fn, &default_value_, sizeof(default_value_));
+        ::write(fn, data_, sizeof(ArithType) * nelem_);
+        std::fclose(fp);
+    }
+    void read(const char *path) const {
+        std::FILE *fp = std::fopen(path, "rb");
+        char buf[128];
+        std::string magic;
+        if(std::fgets(buf, sizeof(buf), fp)) magic = buf;
+        else throw std::runtime_error(std::string("Could not read magic string from file ") + path + ":((((((");
+        if(magic != magic_string()) throw std::runtime_error(std::string("Read wrong magic string from file ") + path + ":((((((: " + magic + ", expected " + magic_string());
+        const int fn = fileno(fp);
+        ::read(fn, &nelem_, sizeof(nelem_));
+        ::read(fp, &default_value_, sizeof(default_value_));
+        ::read(fn, data_, sizeof(ArithType) * nelem_);
+        std::fclose(fp);
     }
     // TODO: Add serialization.
 };
