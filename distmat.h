@@ -101,6 +101,11 @@ public:
     void write(const std::string &path) const {
         return this->write(path.data());
     }
+    void printf(std::FILE *fp) {
+        for(unsigned i(0); i < nelem_; ++i)
+            for(unsigned j(0); j < nelem_; ++j)
+                std::fprintf(fp, j == nelem_ - 1 ? "%lf\n": "%lf\t", this->operator(i, j));
+    }
     void write(const char *path) const {
         std::FILE *fp = std::fopen(path, "wb");
         std::fputs(magic_string(), fp);
