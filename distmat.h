@@ -11,7 +11,7 @@
 namespace dm {
 
 template<typename ArithType>
-class MAGIC_NUMBER {
+struct MAGIC_NUMBER {
     const char *name() {
         throw std::runtime_error("NotImplemented");
         return "NOTIMPLEMENTED";
@@ -20,7 +20,7 @@ class MAGIC_NUMBER {
 
 #define DEC_MAGIC(type, STR) \
     template<>\
-    class MAGIC_NUMBER<type> {\
+    struct MAGIC_NUMBER<type> {\
         const char *name() const {\
             return "DM::" STR;\
         }\
@@ -55,14 +55,17 @@ public:
     using value_type = ArithType;
     using pointer_type = ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
-    DistanceMatrix(size_t n): data_(static_cast<pointer_type>(std::malloc(n * n - 1))), nelem_(n), default_value_(DefaultValue) {
+    DistanceMatrix(size_t n): data_(static_cast<pointer_type>(std::malloc((n * n - 1)>>1))), nelem_(n), default_value_(DefaultValue) {
         if(data_ == nullptr) throw std::bad_alloc();
     } 
     pointer_type       data()       {return data_;}
-    const pointer_type data() const {return data_;}
+    const ArithType   *data() const {return data_;}
     DistanceMatrix(DistanceMatrix &&other) {
         std::memcpy(&other, this);
         std::memset(&other, 0, sizeof(other));
+    }
+    DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): data_(nullptr), nelem_(0), default_value_(default_value) {
+        this->read(path);
     }
     DistanceMatrix(const DistanceMatrix &other):
             data_(static_cast<pointer_type>(std::malloc(other.num_entries()))), nelem_(other.nelem_) {
@@ -104,7 +107,7 @@ public:
     void printf(std::FILE *fp) {
         for(unsigned i(0); i < nelem_; ++i)
             for(unsigned j(0); j < nelem_; ++j)
-                std::fprintf(fp, j == nelem_ - 1 ? "%lf\n": "%lf\t", this->operator(i, j));
+                std::fprintf(fp, j == nelem_ - 1 ? "%lf\n": "%lf\t", this->operator()(i, j));
     }
     void write(const char *path) const {
         std::FILE *fp = std::fopen(path, "wb");
@@ -115,7 +118,7 @@ public:
         ::write(fn, data_, sizeof(ArithType) * nelem_);
         std::fclose(fp);
     }
-    void read(const char *path) const {
+    void read(const char *path) {
         std::FILE *fp = std::fopen(path, "rb");
         char buf[128];
         std::string magic;
@@ -124,7 +127,8 @@ public:
         if(magic != magic_string()) throw std::runtime_error(std::string("Read wrong magic string from file ") + path + ":((((((: " + magic + ", expected " + magic_string());
         const int fn = fileno(fp);
         ::read(fn, &nelem_, sizeof(nelem_));
-        ::read(fp, &default_value_, sizeof(default_value_));
+        if((data_ = static_cast<ArithType *>(std::realloc(data_, (nelem_ * nelem_ - 1)>>1))) == nullptr) throw std::bad_alloc();
+        ::read(fn, static_cast<void *>(&default_value_), sizeof(default_value_));
         ::read(fn, data_, sizeof(ArithType) * nelem_);
         std::fclose(fp);
     }
