@@ -2,6 +2,7 @@
 #include <type_traits>
 #include <cstring>
 #include <cassert>
+#include <array>
 #include <memory>
 #include <cstdlib>
 #include <stdexcept>
@@ -104,10 +105,14 @@ public:
     void write(const std::string &path) const {
         return this->write(path.data());
     }
-    void printf(std::FILE *fp) {
+    void printf(std::FILE *fp, bool use_scientific=false) {
+        std::array<std::array<char, 5>, 2> fmts;
+        fmts[0] = {'%','l','f','\n','\0'};
+        fmts[1] = {'%','l','f','\t','\0'};
+        if(use_scientific) fmts[0][2] = fmts[1][2] = 'e';
         for(unsigned i(0); i < nelem_; ++i)
             for(unsigned j(0); j < nelem_; ++j)
-                std::fprintf(fp, j == nelem_ - 1 ? "%lf\n": "%lf\t", this->operator()(i, j));
+                std::fprintf(fp, fmts[j != nelem_ - 1].data(), this->operator()(i, j));
     }
     void write(const char *path) const {
         std::FILE *fp = std::fopen(path, "wb");
