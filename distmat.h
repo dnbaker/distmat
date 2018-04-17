@@ -39,7 +39,6 @@ DEC_MAGIC(int32_t,"int32_t");
 DEC_MAGIC(int64_t,"int64_t");
 
 #undef DEC_MAGIC
-
 template<typename ArithType=float,
          size_t DefaultValue=0,
          typename=std::enable_if_t<std::is_arithmetic_v<ArithType>>
@@ -57,7 +56,7 @@ public:
     using pointer_type = ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
     void set_default_value(ArithType val) {default_value_ = val;}
-    DistanceMatrix(size_t n): data_((n * (n - 1)) >> 1), nelem_(n), default_value_(DefaultValue) {
+    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE): data_((n * (n - 1)) >> 1), nelem_(n), default_value_(default_value) {
     } 
     pointer_type       data()       {return data_.data();}
     const ArithType   *data() const {return data_.data();}
@@ -76,7 +75,7 @@ public:
         std::memcpy(data_.data(), other.data_.data(), num_entries() * sizeof(value_type));
     }
     size_t num_entries() const {return (nelem_ * (nelem_ - 1)) >> 1;}
-#define ARRAY_ACCESS(row, column) (((nelem_ - 1) * row - ((row * (row - 1)) >> 1)) /* Start of row */ + column - 1)
+#define ARRAY_ACCESS(row, column) (((row) * (nelem_ * 2 - row - 1)) / 2 + column - (row + 1))
     value_type &operator()(size_t row, size_t column) {
         if(__builtin_expect(row == column, 0)) return default_value_;
 #if !NDEBUG
