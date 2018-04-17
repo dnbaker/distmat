@@ -1,9 +1,9 @@
 #pragma once
 #include <type_traits>
 #include <cstring>
+#include <vector>
 #include <cassert>
 #include <array>
-#include <memory>
 #include <cstdlib>
 #include <stdexcept>
 #include <cstdint>
@@ -45,7 +45,7 @@ template<typename ArithType=float,
          typename=std::enable_if_t<std::is_arithmetic_v<ArithType>>
          >
 class DistanceMatrix {
-    ArithType  *data_;
+    std::vector<ArithType> data_;
     size_t     nelem_;
     ArithType   default_value_;
     static const MAGIC_NUMBER<ArithType> magic_;
@@ -56,11 +56,11 @@ public:
     using value_type = ArithType;
     using pointer_type = ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
-    DistanceMatrix(size_t n): data_(static_cast<pointer_type>(std::malloc((n * n - 1)>>1))), nelem_(n), default_value_(DefaultValue) {
-        if(data_ == nullptr) throw std::bad_alloc();
+    void set_default_value(ArithType val) {default_value_ = val;}
+    DistanceMatrix(size_t n): data_((n * (n - 1)) >> 1), nelem_(n), default_value_(DefaultValue) {
     } 
-    pointer_type       data()       {return data_;}
-    const ArithType   *data() const {return data_;}
+    pointer_type       data()       {return data_.data();}
+    const ArithType   *data() const {return data_.data();}
     DistanceMatrix(DistanceMatrix &&other) {
         std::memcpy(&other, this, sizeof(*this));
         std::memset(&other, 0, sizeof(other));
@@ -73,15 +73,20 @@ public:
         if(data_ == nullptr) throw std::bad_alloc();
         nelem_         = other.nelem_;
         default_value_ = other.default_value_;
-        std::memcpy(data_, other.data_, num_entries() * sizeof(value_type));
+        std::memcpy(data_.data(), other.data_.data(), num_entries() * sizeof(value_type));
     }
-    ~DistanceMatrix() {std::free(data_);}
-    size_t num_entries() const {return nelem_ * (nelem_ - 1);}
+    size_t num_entries() const {return (nelem_ * (nelem_ - 1)) >> 1;}
 #define ARRAY_ACCESS(row, column) (((nelem_ - 1) * row - ((row * (row - 1)) >> 1)) /* Start of row */ + column - 1)
     value_type &operator()(size_t row, size_t column) {
         if(__builtin_expect(row == column, 0)) return default_value_;
+#if !NDEBUG
+        if(row < column)
+            return data_.at(ARRAY_ACCESS(row, column));
+        return data_.at(ARRAY_ACCESS(column, row));
+#else
         if(row < column) return data_[ARRAY_ACCESS(row, column)];
         else             return data_[ARRAY_ACCESS(column, row)];
+#endif
     }
 #undef ARRAY_ACCESS
     const value_type &operator()(size_t row, size_t column) const {
@@ -100,7 +105,7 @@ public:
         if(tmp == nullptr) throw std::bad_alloc();
         nelem_ = new_size;
         data_ = tmp;
-        std::fill(data_, data_ + num_entries(), static_cast<value_type>(-1));
+        std::fill(std::begin(data_), std::end(data_), static_cast<value_type>(-1));
     }
     void write(const std::string &path) const {
         return this->write(path.data());
