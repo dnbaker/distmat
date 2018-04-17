@@ -62,7 +62,7 @@ public:
     pointer_type       data()       {return data_;}
     const ArithType   *data() const {return data_;}
     DistanceMatrix(DistanceMatrix &&other) {
-        std::memcpy(&other, this);
+        std::memcpy(&other, this, sizeof(*this));
         std::memset(&other, 0, sizeof(other));
     }
     DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): data_(nullptr), nelem_(0), default_value_(default_value) {
