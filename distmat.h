@@ -137,6 +137,7 @@ public:
         ::read(fn, data_, sizeof(ArithType) * nelem_);
         std::fclose(fp);
     }
+    size_t size() const {return nelem_;}
     // TODO: Add serialization.
 };
 
