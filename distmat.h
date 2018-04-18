@@ -75,16 +75,29 @@ public:
         std::memcpy(data_.data(), other.data_.data(), num_entries() * sizeof(value_type));
     }
     size_t num_entries() const {return (nelem_ * (nelem_ - 1)) >> 1;}
+#if !NDEBUG
+    // Manual calculation
+    size_t index(size_t r, size_t c) const {
+        assert(r < c);
+        size_t ret = 0;
+        for(size_t i(0); i < r; ++i) {
+            ret += nelem_ - i - 1;
+        }
+        ret += c - r - 1;
+        return ret;
+    }
+#endif
 #define ARRAY_ACCESS(row, column) (((row) * (nelem_ * 2 - row - 1)) / 2 + column - (row + 1))
     value_type &operator()(size_t row, size_t column) {
         if(__builtin_expect(row == column, 0)) return default_value_;
 #if !NDEBUG
+        const auto ind(row < column ? index(row, column): index(column, row)), acc(row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row));
+        assert(ind == acc || !std::fprintf(stderr, "ind: %zu. acc: %zu. r: %zu, c: %zu\n", ind, acc, row, column));
         if(row < column)
             return data_.at(ARRAY_ACCESS(row, column));
         return data_.at(ARRAY_ACCESS(column, row));
 #else
-        if(row < column) return data_[ARRAY_ACCESS(row, column)];
-        else             return data_[ARRAY_ACCESS(column, row)];
+        return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
 #endif
     }
 #undef ARRAY_ACCESS
