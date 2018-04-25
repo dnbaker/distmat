@@ -60,22 +60,19 @@ public:
     } 
     pointer_type       data()       {return data_.data();}
     const ArithType   *data() const {return data_.data();}
-    DistanceMatrix(DistanceMatrix &&other) {
-        std::memcpy(&other, this, sizeof(*this));
-        std::memset(&other, 0, sizeof(other));
-    }
-    DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): data_(nullptr), nelem_(0), default_value_(default_value) {
+    DistanceMatrix(DistanceMatrix &&other) = default;
+    DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): nelem_(0), default_value_(default_value) {
         this->read(path);
     }
     DistanceMatrix(const DistanceMatrix &other):
-            data_(static_cast<pointer_type>(std::malloc(other.num_entries()))), nelem_(other.nelem_) {
-        if(data_ == nullptr) throw std::bad_alloc();
+            nelem_(other.nelem_) {
+        data_.resize(other.data_.size());
         nelem_         = other.nelem_;
         default_value_ = other.default_value_;
-        std::memcpy(data_.data(), other.data_.data(), num_entries() * sizeof(value_type));
+        std::memcpy(data_.data(), other.data_.data(), data_.data.size() * sizeof(value_type));
     }
     size_t num_entries() const {return (nelem_ * (nelem_ - 1)) >> 1;}
-#if !NDEBUG
+#ifdef MANUAL_ARR
     // Manual calculation
     size_t index(size_t r, size_t c) const {
         assert(r < c);
@@ -90,7 +87,7 @@ public:
 #define ARRAY_ACCESS(row, column) (((row) * (nelem_ * 2 - row - 1)) / 2 + column - (row + 1))
     value_type &operator()(size_t row, size_t column) {
         if(__builtin_expect(row == column, 0)) return default_value_;
-#if !NDEBUG
+#ifdef MANUAL_ARR
         const auto ind(row < column ? index(row, column): index(column, row)), acc(row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row));
         assert(ind == acc || !std::fprintf(stderr, "ind: %zu. acc: %zu. r: %zu, c: %zu\n", ind, acc, row, column));
         if(row < column)
@@ -111,13 +108,11 @@ public:
        return data_[index];
     }
     void resize(size_t new_size) {
+        if(new_size == nelem_) return; // Already done! Aren't we fast?
         if(new_size < nelem_) throw std::runtime_error("NotImplemented: shrinking.");
-        if(new_size == nelem_) return;
-        auto tmp = std::realloc(data_, sizeof(value_type) * (new_size * (new_size - 1)));
-        if(tmp == nullptr) throw std::bad_alloc();
+        data_.resize((new_size * (new_size - 1)) >> 1); // At least one number will be even, so we can just bitshift.
         nelem_ = new_size;
-        data_ = tmp;
-        std::fill(std::begin(data_), std::end(data_), static_cast<value_type>(-1));
+        std::fill(std::begin(data_), std::end(data_), static_cast<value_type>(-1)); // Invalid
     }
     void write(const std::string &path) const {
         return this->write(path.data());
@@ -129,7 +124,7 @@ public:
         if(use_scientific) fmts[0][2] = fmts[1][2] = 'e';
         for(unsigned i(0); i < nelem_; ++i)
             for(unsigned j(0); j < nelem_; ++j)
-                std::fprintf(fp, fmts[j != nelem_ - 1].data(), this->operator()(i, j));
+                std::fprintf(fp, fmts[j != nelem_ - 1].data(), static_cast<double>(this->operator()(i, j)));
     }
     void write(const char *path) const {
         std::FILE *fp = std::fopen(path, "wb");
@@ -137,7 +132,7 @@ public:
         const int fn = fileno(fp);
         ::write(fn, &nelem_, sizeof(nelem_));
         ::write(fn, &default_value_, sizeof(default_value_));
-        ::write(fn, data_, sizeof(ArithType) * nelem_);
+        ::write(fn, data_.data(), sizeof(ArithType) * data_.size());
         std::fclose(fp);
     }
     void read(const char *path) {
@@ -149,13 +144,12 @@ public:
         if(magic != magic_string()) throw std::runtime_error(std::string("Read wrong magic string from file ") + path + ":((((((: " + magic + ", expected " + magic_string());
         const int fn = fileno(fp);
         ::read(fn, &nelem_, sizeof(nelem_));
-        if((data_ = static_cast<ArithType *>(std::realloc(data_, (nelem_ * nelem_ - 1)>>1))) == nullptr) throw std::bad_alloc();
+        data_.resize(num_entries());
         ::read(fn, static_cast<void *>(&default_value_), sizeof(default_value_));
-        ::read(fn, data_, sizeof(ArithType) * nelem_);
+        ::read(fn, data_.data(), sizeof(ArithType) * data_.size());
         std::fclose(fp);
     }
     size_t size() const {return nelem_;}
-    // TODO: Add serialization.
 };
 
 } // namespace dm
