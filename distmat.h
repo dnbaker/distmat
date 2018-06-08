@@ -22,7 +22,7 @@ struct MAGIC_NUMBER {
 #define DEC_MAGIC(type, STR) \
     template<>\
     struct MAGIC_NUMBER<type> {\
-        const char *name() const {\
+        static constexpr const char *name() {\
             return "DM::" STR;\
         }\
     }
@@ -47,10 +47,9 @@ class DistanceMatrix {
     std::vector<ArithType> data_;
     size_t     nelem_;
     ArithType   default_value_;
-    static const MAGIC_NUMBER<ArithType> magic_;
 public:
-    const char *magic_string() const {
-        return magic_.name();
+    static const char *magic_string() {
+        return MAGIC_NUMBER<ArithType>::name();
     }
     using value_type = ArithType;
     using pointer_type = ArithType *;
