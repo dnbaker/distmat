@@ -11,6 +11,7 @@
 
 namespace dm {
 
+namespace more_magic {
 template<typename ArithType>
 struct MAGIC_NUMBER {
     const char *name() {
@@ -20,11 +21,8 @@ struct MAGIC_NUMBER {
 };
 
 #define DEC_MAGIC(type, STR) \
-    template<>\
-    struct MAGIC_NUMBER<type> {\
-        static constexpr const char *name() {\
-            return "DM::" STR;\
-        }\
+    template<> struct MAGIC_NUMBER<type> {\
+        static constexpr const char *name() {return "DM::" STR;}\
     }
 
 DEC_MAGIC(float, "float");
@@ -37,6 +35,7 @@ DEC_MAGIC(int8_t,"int8_t");
 DEC_MAGIC(int16_t,"int16_t");
 DEC_MAGIC(int32_t,"int32_t");
 DEC_MAGIC(int64_t,"int64_t");
+} // namespace more_magic
 
 #undef DEC_MAGIC
 template<typename ArithType=float,
@@ -45,12 +44,10 @@ template<typename ArithType=float,
          >
 class DistanceMatrix {
     std::vector<ArithType> data_;
-    size_t     nelem_;
-    ArithType   default_value_;
+    uint64_t  nelem_;
+    ArithType default_value_;
 public:
-    static const char *magic_string() {
-        return MAGIC_NUMBER<ArithType>::name();
-    }
+    static const char *magic_string() {return more_magic::MAGIC_NUMBER<ArithType>::name();}
     using value_type = ArithType;
     using pointer_type = ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
@@ -128,6 +125,7 @@ public:
     void write(const char *path) const {
         std::FILE *fp = std::fopen(path, "wb");
         std::fputs(magic_string(), fp);
+        std::fflush(fp);
         const int fn = fileno(fp);
         ::write(fn, &nelem_, sizeof(nelem_));
         ::write(fn, &default_value_, sizeof(default_value_));
@@ -140,12 +138,14 @@ public:
         std::string magic;
         if(std::fgets(buf, sizeof(buf), fp)) magic = buf;
         else throw std::runtime_error(std::string("Could not read magic string from file ") + path + ":((((((");
-        if(magic != magic_string()) throw std::runtime_error(std::string("Read wrong magic string from file ") + path + ":((((((: " + magic + ", expected " + magic_string());
-        const int fn = fileno(fp);
-        ::read(fn, &nelem_, sizeof(nelem_));
+        magic.pop_back();
+        if(magic != magic_string()) throw std::runtime_error(std::string("Read wrong magic string from file ") + path + ". Magic string: '" + magic + "', expected '" + magic_string() + "'");
+        std::fread(&nelem_, sizeof(nelem_), 1, fp);
+        std::fprintf(stderr, "Number of elements: %zu\n", nelem_);
+        std::fprintf(stderr, "Number of entries: %zu\n", num_entries());
         data_.resize(num_entries());
-        ::read(fn, static_cast<void *>(&default_value_), sizeof(default_value_));
-        ::read(fn, data_.data(), sizeof(ArithType) * data_.size());
+        std::fread(static_cast<void *>(&default_value_), sizeof(default_value_), 1, fp);
+        ::read(fileno(fp), data_.data(), sizeof(ArithType) * data_.size());
         std::fclose(fp);
     }
     size_t size() const {return nelem_;}
