@@ -59,6 +59,9 @@ public:
     DistanceMatrix(DistanceMatrix &&other) = default;
     DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): nelem_(0), default_value_(default_value) {
         this->read(path);
+#if !NDEBUG
+        for(const auto &el: data_) std::fprintf(stderr, "el at ind %zu: %f\n", &el - data_.data(), el);
+#endif
     }
     DistanceMatrix(const DistanceMatrix &other):
             nelem_(other.nelem_) {
@@ -123,29 +126,32 @@ public:
                 std::fprintf(fp, fmts[j != nelem_ - 1].data(), static_cast<double>(this->operator()(i, j)));
     }
     void write(const char *path) const {
-        std::FILE *fp = std::fopen(path, "wb");
+        std::FILE *fp = std::fopen(std::strcmp(path, "-") ? path: "/dev/stdout", "wb");
         std::fputs(magic_string(), fp);
         std::fflush(fp);
         const int fn = fileno(fp);
         ::write(fn, &nelem_, sizeof(nelem_));
-        ::write(fn, &default_value_, sizeof(default_value_));
         ::write(fn, data_.data(), sizeof(ArithType) * data_.size());
         std::fclose(fp);
     }
     void read(const char *path) {
-        std::FILE *fp = std::fopen(path, "rb");
+        std::FILE *fp = std::fopen(std::strcmp(path, "-") ? path: "/dev/stdin", "rb");
         char buf[128];
         std::string magic;
         if(std::fgets(buf, sizeof(buf), fp)) magic = buf;
         else throw std::runtime_error(std::string("Could not read magic string from file ") + path + ":((((((");
         magic.pop_back();
+#if !NDEBUG
+        std::fprintf(stderr, "Magic: %s\n", magic.data());
+#endif
         if(magic != magic_string()) throw std::runtime_error(std::string("Read wrong magic string from file ") + path + ". Magic string: '" + magic + "', expected '" + magic_string() + "'");
         std::fread(&nelem_, sizeof(nelem_), 1, fp);
+#if !NDEBUG
         std::fprintf(stderr, "Number of elements: %zu\n", nelem_);
         std::fprintf(stderr, "Number of entries: %zu\n", num_entries());
+#endif
         data_.resize(num_entries());
-        std::fread(static_cast<void *>(&default_value_), sizeof(default_value_), 1, fp);
-        ::read(fileno(fp), data_.data(), sizeof(ArithType) * data_.size());
+        std::fread(data_.data(), sizeof(ArithType), data_.size(), fp);
         std::fclose(fp);
     }
     size_t size() const {return nelem_;}
