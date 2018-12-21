@@ -3,7 +3,7 @@
 #include <getopt.h>
 #include <string>
 
-int main(int argc, char *argv[]) {
+int print_binary_main(int argc, char *argv[]) {
     int c;
     //bool use_float = false; Automatically detected, not needed.
     bool use_scientific = false;
@@ -11,7 +11,7 @@ int main(int argc, char *argv[]) {
     for(char **p(argv); *p; ++p) if(std::strcmp(*p, "-h") && std::strcmp(*p, "--help") == 0) goto usage;
     if(argc == 1) {
         usage:
-        std::fprintf(stderr, "%s <path to binary file> [- to read from stdin]\n", argv ? static_cast<const char *>(*argv): "flashdans");
+        std::fprintf(stderr, "%s <path to binary file> [- to read from stdin]\n-s: Emit in scientific notation.\n", argv ? static_cast<const char *>(*argv): "dashing");
     }
     while((c = getopt(argc, argv, ":o:sh?")) >= 0) {
         switch(c) {
