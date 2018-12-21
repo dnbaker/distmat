@@ -40,7 +40,7 @@ DEC_MAGIC(int64_t,"int64_t");
 #undef DEC_MAGIC
 template<typename ArithType=float,
          size_t DefaultValue=0,
-         typename=std::enable_if_t<std::is_arithmetic_v<ArithType>>
+         typename=typename std::enable_if<std::is_arithmetic<ArithType>::value>::type
          >
 class DistanceMatrix {
     std::vector<ArithType> data_;
