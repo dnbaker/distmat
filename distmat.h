@@ -55,6 +55,7 @@ public:
     void set_default_value(ArithType val) {default_value_ = val;}
     DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE): data_((n * (n - 1)) >> 1), nelem_(n), default_value_(default_value) {
     } 
+    DistanceMatrix(): DistanceMatrix(size_t(0), DEFAULT_VALUE) {}
     pointer_type       data()       {return data_.data();}
     const_pointer_type data() const {return data_.data();}
     DistanceMatrix(DistanceMatrix &&other) = default;
@@ -139,14 +140,25 @@ public:
             for(unsigned j(0); j < nelem_; ++j)
                 std::fprintf(fp, fmts[j != nelem_ - 1].data(), static_cast<double>(this->operator()(i, j)));
     }
-    void write(const char *path) const {
-        std::FILE *fp = std::fopen(std::strcmp(path, "-") ? path: "/dev/stdout", "wb");
-        std::fputs(magic_string(), fp);
-        std::fflush(fp);
-        const int fn = fileno(fp);
-        ::write(fn, &nelem_, sizeof(nelem_));
-        ::write(fn, data_.data(), sizeof(ArithType) * data_.size());
-        std::fclose(fp);
+    size_t write(const char *path, int compression_level=0) const {
+        std::string fmt = compression_level ? std::string("wT"): (std::string("wb") + std::to_string(compression_level % 10));
+        gzFile fp = gzopen(std::strcmp(path, "-") ? path: "/dev/stdout", fmt.data());
+        if(!fp) throw std::runtime_error(std::string("Could not open file at ") + path);
+        size_t ret = write(fp);
+        gzclose(fp);
+        return ret;
+    }
+    size_t write(gzFile fp) const {
+        size_t ret = gzputs(fp, magic_string());
+        ret += gzwrite(fp, &nelem_, sizeof(nelem_));
+        ret += gzwrite(fp, data_.data(), sizeof(ArithType) * data_.size());
+        return ret;
+    }
+    size_t write(std::FILE *fp) const {
+        size_t ret = fputs(magic_string(), fp);
+        ret += ::write(fp, &nelem_, sizeof(nelem_));
+        ret += ::write(fp, data_.data(), sizeof(ArithType) * data_.size());
+        return ret;
     }
     void read(const char *path) {
         std::FILE *fp = std::fopen(std::strcmp(path, "-") ? path: "/dev/stdin", "rb");
