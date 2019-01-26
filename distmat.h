@@ -50,12 +50,13 @@ public:
     static const char *magic_string() {return more_magic::MAGIC_NUMBER<ArithType>::name();}
     using value_type = ArithType;
     using pointer_type = ArithType *;
+    using const_pointer_type = const ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
     void set_default_value(ArithType val) {default_value_ = val;}
     DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE): data_((n * (n - 1)) >> 1), nelem_(n), default_value_(default_value) {
     } 
     pointer_type       data()       {return data_.data();}
-    const ArithType   *data() const {return data_.data();}
+    const_pointer_type data() const {return data_.data();}
     DistanceMatrix(DistanceMatrix &&other) = default;
     DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): nelem_(0), default_value_(default_value) {
         this->read(path);
@@ -86,20 +87,24 @@ public:
 #define ARRAY_ACCESS(row, column) (((row) * (nelem_ * 2 - row - 1)) / 2 + column - (row + 1))
     value_type &operator()(size_t row, size_t column) {
         if(__builtin_expect(row == column, 0)) return default_value_;
-#ifdef MANUAL_ARR
-        const auto ind(row < column ? index(row, column): index(column, row)), acc(row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row));
-        assert(ind == acc || !std::fprintf(stderr, "ind: %zu. acc: %zu. r: %zu, c: %zu\n", ind, acc, row, column));
-        if(row < column)
-            return data_.at(ARRAY_ACCESS(row, column));
-        return data_.at(ARRAY_ACCESS(column, row));
-#else
         return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
-#endif
     }
-#undef ARRAY_ACCESS
     const value_type &operator()(size_t row, size_t column) const {
         return static_cast<const value_type &>(operator()(row, column));
     }
+#if 0
+    const value_type &operator()(size_t row, size_t column) const {
+        if(__builtin_expect(row == column, 0)) return default_value_;
+        return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
+    }
+#endif
+    std::pair<pointer_type, size_t> row_span(size_t i) {
+        return std::make_pair(&this->operator()(i, 0), nelem_ - i - 1);
+    }
+    std::pair<const_pointer_type, size_t> row_span(size_t i) const {
+        return std::make_pair(&this->operator()(i, 0), nelem_ - i - 1);
+    }
+#undef ARRAY_ACCESS
     value_type &operator[](size_t index) {
        return data_[index];
     }
@@ -115,6 +120,15 @@ public:
     }
     void write(const std::string &path) const {
         return this->write(path.data());
+    }
+    void printf(gzFile fp, bool use_scientific=false) {
+        std::array<std::array<char, 5>, 2> fmts;
+        fmts[0] = {'%','l','f','\n','\0'};
+        fmts[1] = {'%','l','f','\t','\0'};
+        if(use_scientific) fmts[0][2] = fmts[1][2] = 'e';
+        for(unsigned i(0); i < nelem_; ++i)
+            for(unsigned j(0); j < nelem_; ++j)
+                gzprintf(fp, fmts[j != nelem_ - 1].data(), static_cast<double>(this->operator()(i, j)));
     }
     void printf(std::FILE *fp, bool use_scientific=false) {
         std::array<std::array<char, 5>, 2> fmts;
