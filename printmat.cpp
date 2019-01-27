@@ -33,5 +33,7 @@ int print_binary_main(int argc, char *argv[]) {
         INNER(double);
     }
     std::fclose(fp);
+    dm::DistanceMatrix<float, 0, zfp::array1> mat(argv[optind]);
     return EXIT_SUCCESS;
 }
+int main(int a, char *v[]) {return print_binary_main(a, v);}

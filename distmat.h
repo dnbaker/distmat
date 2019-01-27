@@ -8,6 +8,12 @@
 #include <stdexcept>
 #include <cstdint>
 #include "unistd.h"
+#if defined(ZWRAP_USE_ZSTD)
+#  include "zstd_zlibwrapper.h"
+#else
+#  include <zlib.h>
+#endif
+#include "zfp/array/zfparray1.h"
 
 namespace dm {
 
@@ -38,26 +44,51 @@ DEC_MAGIC(int64_t,"int64_t");
 } // namespace more_magic
 
 #undef DEC_MAGIC
+
+template<template <typename... Args> class Container, typename... Args>
+Container<Args...> make_container(size_t n, double rate);
+
+template<typename... Args>
+std::vector<Args...> make_container(size_t n, double) {
+    return std::vector<Args...>(n);
+}
+template<typename... Args>
+zfp::array1<Args...> make_container(size_t n, double rate) {
+    return zfp::array1<Args...>(n, rate);
+}
+
+// Get data pointer
+template<template <typename... Args> class Container, typename... Args>
+Container<Args...> get_buf(Container<Args...> &con);
+
+template<typename... Args> auto get_buf(std::vector<Args...> &con) {return con.data();}
+template<typename... Args> auto get_buf(const std::vector<Args...> &con) {return con.data();}
+
+template<typename... Args> auto get_buf(zfp::array1<Args...> &con) {return con.compressed_data();}
+template<typename... Args> auto get_buf(const zfp::array1<Args...> &con) {return con.compressed_data();}
+
 template<typename ArithType=float,
          size_t DefaultValue=0,
+         template <typename T, typename... Args> class Container=std::vector,
          typename=typename std::enable_if<std::is_arithmetic<ArithType>::value>::type
          >
 class DistanceMatrix {
-    std::vector<ArithType> data_;
+    Container<ArithType> data_;
     uint64_t  nelem_;
     ArithType default_value_;
 public:
     static const char *magic_string() {return more_magic::MAGIC_NUMBER<ArithType>::name();}
+    static constexpr double DEFAULT_ZFP_RATE = 8;
     using value_type = ArithType;
     using pointer_type = ArithType *;
     using const_pointer_type = const ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
     void set_default_value(ArithType val) {default_value_ = val;}
-    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE): data_((n * (n - 1)) >> 1), nelem_(n), default_value_(default_value) {
+    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE, double rate=DEFAULT_ZFP_RATE): data_(make_container<Container>((n * (n - 1)) >> 1, rate)), nelem_(n), default_value_(default_value) {
     } 
     DistanceMatrix(): DistanceMatrix(size_t(0), DEFAULT_VALUE) {}
-    pointer_type       data()       {return data_.data();}
-    const_pointer_type data() const {return data_.data();}
+    pointer_type       data()       {return get_data(data_);}
+    const_pointer_type data() const {return get_data(data_.data());}
     DistanceMatrix(DistanceMatrix &&other) = default;
     DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): nelem_(0), default_value_(default_value) {
         this->read(path);
@@ -141,6 +172,7 @@ public:
                 std::fprintf(fp, fmts[j != nelem_ - 1].data(), static_cast<double>(this->operator()(i, j)));
     }
     size_t write(const char *path, int compression_level=0) const {
+        if(std::is_same<Container, zfp::array1>::value) throw std::runtime_error("Serializing compressed zfp not yet implemented.");
         std::string fmt = compression_level ? std::string("wT"): (std::string("wb") + std::to_string(compression_level % 10));
         gzFile fp = gzopen(std::strcmp(path, "-") ? path: "/dev/stdout", fmt.data());
         if(!fp) throw std::runtime_error(std::string("Could not open file at ") + path);
@@ -149,18 +181,21 @@ public:
         return ret;
     }
     size_t write(gzFile fp) const {
+        if(std::is_same<Container, zfp::array1>::value) throw std::runtime_error("Serializing compressed zfp not yet implemented.");
         size_t ret = gzputs(fp, magic_string());
         ret += gzwrite(fp, &nelem_, sizeof(nelem_));
-        ret += gzwrite(fp, data_.data(), sizeof(ArithType) * data_.size());
+        ret += gzwrite(fp, get_data(data_), sizeof(ArithType) * data_.size());
         return ret;
     }
     size_t write(std::FILE *fp) const {
+        if(std::is_same<Container, zfp::array1>::value) throw std::runtime_error("Serializing compressed zfp not yet implemented.");
         size_t ret = fputs(magic_string(), fp);
         ret += ::write(fp, &nelem_, sizeof(nelem_));
-        ret += ::write(fp, data_.data(), sizeof(ArithType) * data_.size());
+        ret += ::write(fp, get_data(data_), sizeof(ArithType) * data_.size());
         return ret;
     }
     void read(const char *path) {
+        if(std::is_same<Container, zfp::array1>::value) throw std::runtime_error("Serializing compressed zfp not yet implemented.");
         std::FILE *fp = std::fopen(std::strcmp(path, "-") ? path: "/dev/stdin", "rb");
         char buf[128];
         std::string magic;
@@ -177,7 +212,7 @@ public:
         std::fprintf(stderr, "Number of entries: %zu\n", num_entries());
 #endif
         data_.resize(num_entries());
-        std::fread(data_.data(), sizeof(ArithType), data_.size(), fp);
+        std::fread(get_data(data_), sizeof(ArithType), data_.size(), fp);
         std::fclose(fp);
     }
     size_t size() const {return nelem_;}
