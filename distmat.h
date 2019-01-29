@@ -122,23 +122,53 @@ public:
     void write(const std::string &path) const {
         return this->write(path.data());
     }
-    void printf(gzFile fp, bool use_scientific=false) {
+    void printf(gzFile fp, bool use_scientific=false, const std::vector<std::string> *labels=nullptr) {
+        if(labels) {
+            gzprintf(fp, "#Names");
+            for(const auto &s: *labels) {
+                gzputc(fp, '\t');
+                gzwrite(fp, s.data(), s.size());
+            }
+            gzputc(fp, '\n');
+        }
         std::array<std::array<char, 5>, 2> fmts;
         fmts[0] = {'%','l','f','\n','\0'};
         fmts[1] = {'%','l','f','\t','\0'};
         if(use_scientific) fmts[0][2] = fmts[1][2] = 'e';
-        for(unsigned i(0); i < nelem_; ++i)
-            for(unsigned j(0); j < nelem_; ++j)
+        for(unsigned i(0); i < nelem_; ++i) {
+            if(labels) {
+                const auto &label = (*labels)[i];
+                gzwrite(fp, label.data(), label.size());
+                gzputc(fp, '\t');
+            }
+            for(unsigned j(0); j < nelem_; ++j) {
                 gzprintf(fp, fmts[j != nelem_ - 1].data(), static_cast<double>(this->operator()(i, j)));
+            }
+        }
     }
-    void printf(std::FILE *fp, bool use_scientific=false) {
+    void printf(std::FILE *fp, bool use_scientific=false, const std::vector<std::string> *labels=nullptr) {
+        if(labels) {
+            fprintf(fp, "#Names");
+            for(const auto &s: *labels) {
+                fputc('\t', fp);
+                fwrite(s.data(), s.size(), 1, fp);
+            }
+            fputc('\n', fp);
+        }
         std::array<std::array<char, 5>, 2> fmts;
         fmts[0] = {'%','l','f','\n','\0'};
         fmts[1] = {'%','l','f','\t','\0'};
         if(use_scientific) fmts[0][2] = fmts[1][2] = 'e';
-        for(unsigned i(0); i < nelem_; ++i)
-            for(unsigned j(0); j < nelem_; ++j)
-                std::fprintf(fp, fmts[j != nelem_ - 1].data(), static_cast<double>(this->operator()(i, j)));
+        for(unsigned i(0); i < nelem_; ++i) {
+            if(labels) {
+                const auto &label = labels->operator[](i);
+                fwrite(label.data(), label.size(), 1, fp);
+                fputc('\t', fp);
+            }
+            for(unsigned j(0); j < nelem_; ++j) {
+                fprintf(fp, fmts[j != nelem_ - 1].data(), static_cast<double>(this->operator()(i, j)));
+            }
+        }
     }
     size_t write(const char *path, int compression_level=0) const {
         std::string fmt = compression_level ? std::string("wT"): (std::string("wb") + std::to_string(compression_level % 10));
@@ -161,24 +191,24 @@ public:
         return ret;
     }
     void read(const char *path) {
-        std::FILE *fp = std::fopen(std::strcmp(path, "-") ? path: "/dev/stdin", "rb");
+        gzFile fp = gzopen(std::strcmp(path, "-") ? path: "/dev/stdin", "rb");
         char buf[128];
         std::string magic;
-        if(std::fgets(buf, sizeof(buf), fp)) magic = buf;
+        if(gzgets(fp, buf, sizeof(buf))) magic = buf;
         else throw std::runtime_error(std::string("Could not read magic string from file ") + path + ":((((((");
         magic.pop_back();
 #if !NDEBUG
         std::fprintf(stderr, "Magic: %s\n", magic.data());
 #endif
         if(magic != magic_string()) throw std::runtime_error(std::string("Read wrong magic string from file ") + path + ". Magic string: '" + magic + "', expected '" + magic_string() + "'");
-        std::fread(&nelem_, sizeof(nelem_), 1, fp);
+        gzread(fp, &nelem_, sizeof(nelem_));
 #if !NDEBUG
         std::fprintf(stderr, "Number of elements: %zu\n", nelem_);
         std::fprintf(stderr, "Number of entries: %zu\n", num_entries());
 #endif
         data_.resize(num_entries());
-        std::fread(data_.data(), sizeof(ArithType), data_.size(), fp);
-        std::fclose(fp);
+        gzread(fp, data_.data(), sizeof(ArithType) * data_.size());
+        gzclose(fp);
     }
     size_t size() const {return nelem_;}
 };
