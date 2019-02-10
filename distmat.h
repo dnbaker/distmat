@@ -227,8 +227,9 @@ public:
     }
     size_t write(std::FILE *fp) const {
         size_t ret = std::fputc(magic_number(), fp);
-        ret += ::write(fp, &nelem_, sizeof(nelem_));
-        ret += ::write(fp, data_.data(), sizeof(ArithType) * data_.size());
+        int fn = fileno(fp);
+        ret += ::write(fn, &nelem_, sizeof(nelem_));
+        ret += ::write(fn, data_.data(), sizeof(ArithType) * data_.size());
         return ret;
     }
     void read(const char *path) {
