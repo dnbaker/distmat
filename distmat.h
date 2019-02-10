@@ -7,6 +7,11 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <cstdint>
+#if ZWRAP_USE_ZSTD                                                                                     
+#  include "zstd_zlibwrapper.h"                                                                        
+#else                                                                                                  
+#  include <zlib.h>                                                                                    
+#endif 
 #include "unistd.h"
 
 namespace dm {
@@ -19,22 +24,49 @@ struct MAGIC_NUMBER {
         return "NOTIMPLEMENTED";
     }
 };
+enum MagicNumber: uint8_t {
+    FLOAT,
+    DOUBLE,
+    UINT8_T,
+    UINT16_T,
+    UINT32_T,
+    UINT64_T,
+    INT8_T,
+    INT16_T,
+    INT32_T,
+    INT64_T,
+};
+static constexpr const char *arr[] {
+    "float",
+    "double",
+    "uint8_t",
+    "uint16_t",
+    "uint32_t",
+    "uint64_t",
+    "int8_t",
+    "int16_t",
+    "int32_t",
+    "int64_t",
+};
 
-#define DEC_MAGIC(type, STR) \
+#define DEC_MAGIC(type, STR, num) \
     template<> struct MAGIC_NUMBER<type> {\
+        static constexpr MagicNumber magic_number = num;\
         static constexpr const char *name() {return "DM::" STR;}\
+        static const std::string magic_name() {return std::string("DM::") + arr[magic_number];}\
     }
 
-DEC_MAGIC(float, "float");
-DEC_MAGIC(double,"double");
-DEC_MAGIC(uint8_t,"uint8_t");
-DEC_MAGIC(uint16_t,"uint16_t");
-DEC_MAGIC(uint32_t,"uint32_t");
-DEC_MAGIC(uint64_t,"uint64_t");
-DEC_MAGIC(int8_t,"int8_t");
-DEC_MAGIC(int16_t,"int16_t");
-DEC_MAGIC(int32_t,"int32_t");
-DEC_MAGIC(int64_t,"int64_t");
+DEC_MAGIC(float, "float", FLOAT);
+DEC_MAGIC(double,"double", DOUBLE);
+DEC_MAGIC(uint8_t,"uint8_t", UINT8_T);
+DEC_MAGIC(uint16_t,"uint16_t", UINT16_T);
+DEC_MAGIC(uint32_t,"uint32_t", UINT32_T);
+DEC_MAGIC(uint64_t,"uint64_t", UINT64_T);
+DEC_MAGIC(int8_t,"int8_t", INT8_T);
+DEC_MAGIC(int16_t,"int16_t", INT16_T);
+DEC_MAGIC(int32_t,"int32_t", INT32_T);
+DEC_MAGIC(int64_t,"int64_t", INT64_T);
+
 } // namespace more_magic
 
 #undef DEC_MAGIC
@@ -47,7 +79,8 @@ class DistanceMatrix {
     uint64_t  nelem_;
     ArithType default_value_;
 public:
-    static const char *magic_string() {return more_magic::MAGIC_NUMBER<ArithType>::name();}
+    static constexpr const char *magic_string() {return more_magic::MAGIC_NUMBER<ArithType>::name();}
+    static constexpr more_magic::MagicNumber magic_number() {return more_magic::MAGIC_NUMBER<ArithType>::magic_number;}
     using value_type = ArithType;
     using pointer_type = ArithType *;
     using const_pointer_type = const ArithType *;
@@ -62,7 +95,7 @@ public:
     DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): nelem_(0), default_value_(default_value) {
         this->read(path);
 #if !NDEBUG
-        for(const auto &el: data_) std::fprintf(stderr, "el at ind %zu: %f\n", &el - data_.data(), el);
+        //for(const auto &el: data_) std::fprintf(stderr, "el at ind %zu: %f\n", &el - data_.data(), el);
 #endif
     }
     DistanceMatrix(const DistanceMatrix &other):
@@ -179,28 +212,28 @@ public:
         return ret;
     }
     size_t write(gzFile fp) const {
-        size_t ret = gzputs(fp, magic_string());
+        size_t ret = gzputc(fp, magic_number());
         ret += gzwrite(fp, &nelem_, sizeof(nelem_));
         ret += gzwrite(fp, data_.data(), sizeof(ArithType) * data_.size());
         return ret;
     }
     size_t write(std::FILE *fp) const {
-        size_t ret = fputs(magic_string(), fp);
+        size_t ret = std::fputc(magic_number(), fp);
         ret += ::write(fp, &nelem_, sizeof(nelem_));
         ret += ::write(fp, data_.data(), sizeof(ArithType) * data_.size());
         return ret;
     }
     void read(const char *path) {
-        gzFile fp = gzopen(std::strcmp(path, "-") ? path: "/dev/stdin", "rb");
-        char buf[128];
-        std::string magic;
-        if(gzgets(fp, buf, sizeof(buf))) magic = buf;
-        else throw std::runtime_error(std::string("Could not read magic string from file ") + path + ":((((((");
-        magic.pop_back();
-#if !NDEBUG
-        std::fprintf(stderr, "Magic: %s\n", magic.data());
-#endif
-        if(magic != magic_string()) throw std::runtime_error(std::string("Read wrong magic string from file ") + path + ". Magic string: '" + magic + "', expected '" + magic_string() + "'");
+        path = std::strcmp(path, "-") ? path: "/dev/stdin";
+        gzFile fp = gzopen(path, "rb");
+        if(fp == nullptr) throw std::runtime_error(std::string("Could not open file at ") + path);
+        more_magic::MagicNumber magic = more_magic::MagicNumber(gzgetc(fp));
+        
+        if(magic != magic_number()) {
+            char buf[256];
+            std::sprintf(buf, "Wrong magic number read from file (%d/%s), expected (%d/%s)\n", magic, more_magic::arr[magic], magic_number(), magic_string());
+            throw std::runtime_error(buf);
+        }
         gzread(fp, &nelem_, sizeof(nelem_));
 #if !NDEBUG
         std::fprintf(stderr, "Number of elements: %zu\n", nelem_);
@@ -211,6 +244,10 @@ public:
         gzclose(fp);
     }
     size_t size() const {return nelem_;}
+    bool operator==(const DistanceMatrix &o) const {
+        return nelem_ == o.nelem_ &&
+            (std::memcmp(data_.data(), o.data_.data(), data_.size() * sizeof(ArithType)) == 0);
+    }
 };
 
 } // namespace dm

@@ -3,7 +3,7 @@
 #include <getopt.h>
 #include <string>
 
-int print_binary_main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
     int c;
     //bool use_float = false; Automatically detected, not needed.
     bool use_scientific = false;
