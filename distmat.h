@@ -70,6 +70,14 @@ DEC_MAGIC(int64_t,"int64_t", INT64_T);
 } // namespace more_magic
 
 #undef DEC_MAGIC
+
+/* *
+ * DistanceMatrix holds an upper-triangular matrix.
+ * You can access rows with row_span()
+ * or individual entries with (i, j) notation (like Eigen/Blaze/&c.)
+ * You can set the default value with set_default_value.
+ *
+*/
 template<typename ArithType=float,
          size_t DefaultValue=0,
          typename=typename std::enable_if<std::is_arithmetic<ArithType>::value>::type
@@ -228,7 +236,6 @@ public:
         gzFile fp = gzopen(path, "rb");
         if(fp == nullptr) throw std::runtime_error(std::string("Could not open file at ") + path);
         more_magic::MagicNumber magic = more_magic::MagicNumber(gzgetc(fp));
-        
         if(magic != magic_number()) {
             char buf[256];
             std::sprintf(buf, "Wrong magic number read from file (%d/%s), expected (%d/%s)\n", magic, more_magic::arr[magic], magic_number(), magic_string());
