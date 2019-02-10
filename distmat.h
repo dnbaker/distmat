@@ -14,6 +14,14 @@
 #endif 
 #include "unistd.h"
 
+#ifndef INLINE
+#  ifdef __GNUC__ || __clang__
+#    define INLINE __attribute__((always_inline)) inline
+#  else
+#    define INLINE inline
+#  endif
+#endif
+
 namespace dm {
 
 namespace more_magic {
@@ -127,24 +135,26 @@ public:
     }
 #endif
 #define ARRAY_ACCESS(row, column) (((row) * (nelem_ * 2 - row - 1)) / 2 + column - (row + 1))
-    value_type &operator()(size_t row, size_t column) {
+    INLINE value_type &operator()(size_t row, size_t column) {
         if(__builtin_expect(row == column, 0)) return default_value_;
         return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
     }
-    const value_type &operator()(size_t row, size_t column) const {
+    INLINE const value_type &operator()(size_t row, size_t column) const {
         return static_cast<const value_type &>(operator()(row, column));
     }
-#if 0
-    const value_type &operator()(size_t row, size_t column) const {
-        if(__builtin_expect(row == column, 0)) return default_value_;
-        return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
+    pointer_type row_ptr(size_t row) {
+        auto ret = data_.data() + nelem_ * row - (row * (row + 1) / 2);
+        return ret;
     }
-#endif
+    const_pointer_type row_ptr(size_t row) const {
+        auto ret = data_.data() + nelem_ * row - (row * (row + 1) / 2);
+        return ret;
+    }
     std::pair<pointer_type, size_t> row_span(size_t i) {
-        return std::make_pair(&this->operator()(i, 0), nelem_ - i - 1);
+        return std::make_pair(row_ptr(i), nelem_ - i - 1);
     }
     std::pair<const_pointer_type, size_t> row_span(size_t i) const {
-        return std::make_pair(&this->operator()(i, 0), nelem_ - i - 1);
+        return std::make_pair(row_ptr(i), nelem_ - i - 1);
     }
 #undef ARRAY_ACCESS
     value_type &operator[](size_t index) {
