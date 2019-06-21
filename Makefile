@@ -15,3 +15,6 @@ all: printmat serialization span
 
 python: distmat_py.cpp
 	$(CXX) $(FLAGS) -shared -fPIC -I. -I pybind11/include $< -o distmat$(EXT) && touch python
+
+clean:
+	rm -f distmat$(EXT) printmat serialization span
