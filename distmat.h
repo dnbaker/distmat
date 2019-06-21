@@ -15,8 +15,10 @@
 #include "unistd.h"
 
 #ifndef INLINE
-#  ifdef __GNUC__ || __clang__
+#  if defined(__GNUC__) || defined(__clang__)
 #    define INLINE __attribute__((always_inline)) inline
+#  elif defined(__CUDACC__)
+#    define INLINE __forceinline__ inline
 #  else
 #    define INLINE inline
 #  endif
