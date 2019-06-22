@@ -142,7 +142,8 @@ public:
         return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
     }
     INLINE const value_type &operator()(size_t row, size_t column) const {
-        return static_cast<const value_type &>(operator()(row, column));
+        if(__builtin_expect(row == column, 0)) return default_value_;
+        return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
     }
     pointer_type row_ptr(size_t row) {
         auto ret = data_.data() + nelem_ * row - (row * (row + 1) / 2);
@@ -175,7 +176,26 @@ public:
     void write(const std::string &path) const {
         return this->write(path.data());
     }
-    void printf(gzFile fp, bool use_scientific=false, const std::vector<std::string> *labels=nullptr) {
+    std::string to_string(bool use_scientific=false, const std::vector<std::string> *labels=nullptr) const {
+        std::string ret;
+        ret.reserve(size() * size() * 6 + (labels ? size_t(10 * labels->size()): size_t(0)));
+        if(labels) {
+            ret = "##Labels";
+            for(const auto &l: *labels)
+                ret += '\t', ret += l;
+            ret += '\n';
+        }
+        for(size_t i = 0; i < size(); ++i) {
+            if(labels)
+                ret += labels->operator[](i), ret += '\t';
+            for(size_t j = 0; j < size(); ++j) {
+                ret += std::to_string(this->operator()(i, j)), ret += '\t';
+            }
+            ret.back() = '\n'; // Extra tab is now a newline
+        }
+        return ret;
+    }
+    void printf(gzFile fp, bool use_scientific=false, const std::vector<std::string> *labels=nullptr) const {
         if(labels) {
             gzprintf(fp, "#Names");
             for(const auto &s: *labels) {
@@ -184,9 +204,7 @@ public:
             }
             gzputc(fp, '\n');
         }
-        std::array<std::array<char, 5>, 2> fmts;
-        fmts[0] = {'%','l','f','\n','\0'};
-        fmts[1] = {'%','l','f','\t','\0'};
+        std::array<std::array<char, 5>, 2> fmts{{'%','l','f','\n','\0'}, {'%','l','f','\t','\0'}};
         if(use_scientific) fmts[0][2] = fmts[1][2] = 'e';
         for(unsigned i(0); i < nelem_; ++i) {
             if(labels) {
@@ -199,7 +217,7 @@ public:
             }
         }
     }
-    void printf(std::FILE *fp, bool use_scientific=false, const std::vector<std::string> *labels=nullptr) {
+    void printf(std::FILE *fp, bool use_scientific=false, const std::vector<std::string> *labels=nullptr) const {
         if(labels) {
             fprintf(fp, "#Names");
             for(const auto &s: *labels) {
