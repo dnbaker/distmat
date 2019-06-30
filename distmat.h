@@ -55,7 +55,17 @@ static std::string to_string(__uint128_t num)
     return str;
 }
 static std::string to_string(__int128_t n) {
-    return to_string(__uint128_t(n)); // This is wrong, but just a placeholder.
+    std::string str;
+    bool signbit;
+    if(n < 0) signbit = 1, n = -n;
+    else signbit = 0;
+    do {
+        int digit = num % 10;
+        num /= 10;
+        str = std::to_string(digit) + str;
+    } while(num);
+    if(signbit) str = std::string("-") + str;
+    return str;
 }
 
 template<> struct numeric_limits<__uint128_t> {
