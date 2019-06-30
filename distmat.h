@@ -60,10 +60,10 @@ static std::string to_string(__int128_t n) {
     if(n < 0) signbit = 1, n = -n;
     else signbit = 0;
     do {
-        int digit = num % 10;
-        num /= 10;
+        int digit = n % 10;
+        n /= 10;
         str = std::to_string(digit) + str;
-    } while(num);
+    } while(n);
     if(signbit) str = std::string("-") + str;
     return str;
 }
