@@ -1,6 +1,6 @@
 CXX?=g++
 
-PYCONFIG?=python3.7-config
+PYCONFIG?=$(shell which python)-config
 EXT=$(shell $(PYCONFIG) --extension-suffix)
 INCLUDE+=
 PYINCLUDE=$(shell $(PYCONFIG) --includes) -I. -Ipybind11/include

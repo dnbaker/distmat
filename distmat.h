@@ -7,11 +7,13 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <cstdint>
-#if ZWRAP_USE_ZSTD                                                                                     
-#  include "zstd_zlibwrapper.h"                                                                        
-#else                                                                                                  
-#  include <zlib.h>                                                                                    
-#endif 
+#include <limits>
+#include <cinttypes>
+#if ZWRAP_USE_ZSTD
+#  include "zstd_zlibwrapper.h"
+#else
+#  include <zlib.h>
+#endif
 #include "unistd.h"
 
 #ifndef INLINE
@@ -23,6 +25,51 @@
 #    define INLINE inline
 #  endif
 #endif
+
+#define STRINGIZER(x)   # x
+#define TO_STRING(x)    STRINGIZER(x)
+
+namespace std {
+#if __cplusplus < 201703L
+template <class C>
+constexpr auto size(const C& c) -> decltype(c.size())
+{
+    return c.size();
+}
+
+template <class T, std::size_t N>
+constexpr std::size_t size(const T (&array)[N]) noexcept
+{
+    return N;
+}
+#endif
+
+static std::string to_string(__uint128_t num)
+{
+    std::string str;
+    do {
+        int digit = num % 10;
+        num /= 10;
+        str = std::to_string(digit) + str;
+    } while(num);
+    return str;
+}
+static std::string to_string(__int128_t n) {
+    return to_string(__uint128_t(n)); // This is wrong, but just a placeholder.
+}
+
+template<> struct numeric_limits<__uint128_t> {
+    static constexpr __uint128_t max() {return __uint128_t(-1);}
+    static constexpr __uint128_t min() {return __uint128_t(0);}
+};
+template<> struct numeric_limits<__int128_t> {
+    static constexpr __int128_t max() {return  (__int128) (((unsigned __int128) 1 << ((__SIZEOF_INT128__ * __CHAR_BIT__) - 1)) - 1);}
+    static constexpr __int128_t min() {return (-max() - 1);}
+};
+
+} // namespace std
+#undef TO_STRING
+#undef STRINGIZER
 
 namespace dm {
 
@@ -41,10 +88,12 @@ enum MagicNumber: uint8_t {
     UINT16_T,
     UINT32_T,
     UINT64_T,
+    UINT128_T,
     INT8_T,
     INT16_T,
     INT32_T,
     INT64_T,
+    INT128_T
 };
 static constexpr const char *arr[] {
     "float",
@@ -53,10 +102,12 @@ static constexpr const char *arr[] {
     "uint16_t",
     "uint32_t",
     "uint64_t",
+    "uint128_t",
     "int8_t",
     "int16_t",
     "int32_t",
     "int64_t",
+    "int128_t",
 };
 
 #define DEC_MAGIC(type, STR, num) \
@@ -72,10 +123,12 @@ DEC_MAGIC(uint8_t,"uint8_t", UINT8_T);
 DEC_MAGIC(uint16_t,"uint16_t", UINT16_T);
 DEC_MAGIC(uint32_t,"uint32_t", UINT32_T);
 DEC_MAGIC(uint64_t,"uint64_t", UINT64_T);
+DEC_MAGIC(__uint128_t,"uint128_t", UINT128_T);
 DEC_MAGIC(int8_t,"int8_t", INT8_T);
 DEC_MAGIC(int16_t,"int16_t", INT16_T);
 DEC_MAGIC(int32_t,"int32_t", INT32_T);
 DEC_MAGIC(int64_t,"int64_t", INT64_T);
+DEC_MAGIC(__int128_t,"int128_t", INT128_T);
 
 } // namespace more_magic
 
@@ -90,7 +143,8 @@ DEC_MAGIC(int64_t,"int64_t", INT64_T);
 */
 template<typename ArithType=float,
          size_t DefaultValue=0,
-         typename=typename std::enable_if<std::is_arithmetic<ArithType>::value>::type
+         bool force=false,
+         typename=typename std::enable_if<std::is_arithmetic<ArithType>::value || std::is_same<ArithType,__uint128_t>::value || std::is_same<ArithType,__int128_t>::value || force>::type
          >
 class DistanceMatrix {
     std::vector<ArithType> data_;
@@ -105,7 +159,7 @@ public:
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
     void set_default_value(ArithType val) {default_value_ = val;}
     DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE): data_((n * (n - 1)) >> 1), nelem_(n), default_value_(default_value) {
-    } 
+    }
     DistanceMatrix(): DistanceMatrix(size_t(0), DEFAULT_VALUE) {}
     pointer_type       data()       {return data_.data();}
     const_pointer_type data() const {return data_.data();}
