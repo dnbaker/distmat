@@ -1,11 +1,12 @@
 CXX?=g++
 
-PYCONFIG?=$(shell which python)-config
+PYTHON?=$(shell which python)
+PYCONFIG?=$(PYTHON)-config
 EXT=$(shell $(PYCONFIG) --extension-suffix)
 INCLUDE+=
 PYINCLUDE=$(shell $(PYCONFIG) --includes) -I. -Ipybind11/include
 LIB=-lz
-PYLIB=-L$(shell $(PYCONFIG) --prefix)/lib -lpython3.7 #$(shell $(PYCONFIG) --ldflags)
+PYLIB=-L$(shell $(PYCONFIG) --prefix)/lib $(shell $(PYCONFIG) --libs)  #$(shell $(PYCONFIG) --ldflags)
 FLAGS=$(INCLUDE) -std=c++14 -O3 -march=native $(LIB)
 
 
