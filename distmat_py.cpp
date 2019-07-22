@@ -8,7 +8,7 @@ using dm::DistanceMatrix;
 PYBIND11_MODULE(distmat, m) {
     m.doc() = "distmat: hold a distance matrix in N choose 2 space with fast random access"; // optional module docstring
 #define DEC_TYPE(TYPE, suffix) \
-    py::class_<DistanceMatrix<TYPE>> (m, "dm" suffix)\
+    py::class_<DistanceMatrix<TYPE>> (m, "dm" suffix, "dm " suffix " (x): if x is a str, load binary matrix from file. If x is an integer, create an empty triangular distance matrix.")\
         .def(py::init<size_t>())\
         .def(py::init<const char *>())\
         .def("write", [](const DistanceMatrix<TYPE> &x, const char *s) {x.write(s);})\
@@ -32,10 +32,4 @@ PYBIND11_MODULE(distmat, m) {
         .def("set_halves", [](DistanceMatrix<float> &x, size_t i, size_t j, uint64_t v1, uint64_t v2) {x(i, j) = (__uint128_t(v1) << 64) | v2;});
     DEC_TYPE(__int128_t, "_int128_t")
         .def("set_halves", [](DistanceMatrix<float> &x, size_t i, size_t j, int64_t v1, int64_t v2) {x(i, j) = (__int128_t(v1) << 64) | v2;});
-#if 0
-    m.def("jaccard_index", [](hll_t &h1, hll_t &h2) {
-            return jaccard_index(h1, h2);
-        }
-    );
-#endif
 }
