@@ -180,6 +180,7 @@ public:
         //for(const auto &el: data_) std::fprintf(stderr, "el at ind %zu: %f\n", &el - data_.data(), el);
 #endif
     }
+    auto nelem() const {return nelem_;}
     DistanceMatrix(const DistanceMatrix &other):
             nelem_(other.nelem_) {
         data_.resize(other.data_.size());

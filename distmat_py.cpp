@@ -17,7 +17,9 @@ PYBIND11_MODULE(distmat, m) {
         .def("set", [](DistanceMatrix<TYPE> &x, size_t i, size_t j, TYPE val) {x(i, j) = val;})\
         .def("printf", [](const DistanceMatrix<TYPE> &x) {x.printf(stdout);})\
         .def("printerr", [](const DistanceMatrix<TYPE> &x) {x.printf(stderr);})\
-        .def("__str__", [](const DistanceMatrix<TYPE> &x) {return x.to_string();})
+        .def("__str__", [](const DistanceMatrix<TYPE> &x) {return x.to_string();})\
+        .def("__len__", [](const DistanceMatrix<TYPE> &x) {return x.size();})\
+        .def("nelem", [](const DistanceMatrix<TYPE> &x) {return x.nelem();})
     DEC_TYPE(float, "_float");
     DEC_TYPE(double, "_double");
     DEC_TYPE(int8_t, "_int8_t");
