@@ -7,7 +7,12 @@ INCLUDE+=
 PYINCLUDE=$(shell $(PYCONFIG) --includes) -I. -Ipybind11/include
 LIB=-lz
 PYLIB=-L$(shell $(PYCONFIG) --prefix)/lib $(shell $(PYCONFIG) --libs)  #$(shell $(PYCONFIG) --ldflags)
-FLAGS=$(INCLUDE) -std=c++14 -O3 -march=native $(LIB)
+ifeq ($(shell uname),Darwin)
+    UDSTR=-undefined dynamic_lookup
+else
+    UDSTR=
+endif
+FLAGS=$(INCLUDE) -std=c++14 -O3 -march=native $(LIB) $(UDSTR)
 
 
 all: printmat serialization span

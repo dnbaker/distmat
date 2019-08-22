@@ -43,8 +43,17 @@ constexpr std::size_t size(const T (&array)[N]) noexcept
     return N;
 }
 #endif
+} // std
 
-static std::string to_string(__uint128_t num)
+
+
+#undef TO_STRING
+#undef STRINGIZER
+
+namespace dm {
+
+template<typename T> std::string to_string(T x) {return std::to_string(x);}
+template<> std::string to_string<__uint128_t>(__uint128_t num)
 {
     std::string str;
     do {
@@ -54,7 +63,7 @@ static std::string to_string(__uint128_t num)
     } while(num);
     return str;
 }
-static std::string to_string(__int128_t n) {
+template<> std::string to_string<__int128_t>(__int128_t n) {
     std::string str;
     bool signbit;
     if(n < 0) signbit = 1, n = -n;
@@ -67,6 +76,7 @@ static std::string to_string(__int128_t n) {
     if(signbit) str = std::string("-") + str;
     return str;
 }
+template<typename T> struct numeric_limits: public std::numeric_limits<T> {};
 
 template<> struct numeric_limits<__uint128_t> {
     static constexpr __uint128_t max() {return __uint128_t(-1);}
@@ -76,12 +86,6 @@ template<> struct numeric_limits<__int128_t> {
     static constexpr __int128_t max() {return  (__int128) (((unsigned __int128) 1 << ((__SIZEOF_INT128__ * __CHAR_BIT__) - 1)) - 1);}
     static constexpr __int128_t min() {return (-max() - 1);}
 };
-
-} // namespace std
-#undef TO_STRING
-#undef STRINGIZER
-
-namespace dm {
 
 namespace more_magic {
 template<typename ArithType>
@@ -254,7 +258,7 @@ public:
             if(labels)
                 ret += labels->operator[](i), ret += '\t';
             for(size_t j = 0; j < size(); ++j) {
-                ret += std::to_string(this->operator()(i, j)), ret += '\t';
+                ret += to_string(this->operator()(i, j)), ret += '\t';
             }
             ret.back() = '\n'; // Extra tab is now a newline
         }
