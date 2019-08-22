@@ -52,8 +52,8 @@ constexpr std::size_t size(const T (&array)[N]) noexcept
 
 namespace dm {
 
-template<typename T> std::string to_string(T x) {return std::to_string(x);}
-template<> std::string to_string<__uint128_t>(__uint128_t num)
+template<typename T> inline std::string to_string(T x) {return std::to_string(x);}
+template<> inline std::string to_string<__uint128_t>(__uint128_t num)
 {
     std::string str;
     do {
@@ -63,7 +63,7 @@ template<> std::string to_string<__uint128_t>(__uint128_t num)
     } while(num);
     return str;
 }
-template<> std::string to_string<__int128_t>(__int128_t n) {
+template<> inline std::string to_string<__int128_t>(__int128_t n) {
     std::string str;
     bool signbit;
     if(n < 0) signbit = 1, n = -n;
