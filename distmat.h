@@ -26,9 +26,6 @@
 #  endif
 #endif
 
-#define STRINGIZER(x)   # x
-#define TO_STRING(x)    STRINGIZER(x)
-
 namespace std {
 #if __cplusplus < 201703L
 template <class C>
@@ -45,10 +42,6 @@ constexpr std::size_t size(const T (&array)[N]) noexcept
 #endif
 } // std
 
-
-
-#undef TO_STRING
-#undef STRINGIZER
 
 namespace dm {
 
@@ -193,26 +186,18 @@ public:
         std::memcpy(data_.data(), other.data_.data(), data_.data.size() * sizeof(value_type));
     }
     size_t num_entries() const {return (nelem_ * (nelem_ - 1)) >> 1;}
-#ifdef MANUAL_ARR
-    // Manual calculation
-    size_t index(size_t r, size_t c) const {
-        assert(r < c);
-        size_t ret = 0;
-        for(size_t i(0); i < r; ++i) {
-            ret += nelem_ - i - 1;
-        }
-        ret += c - r - 1;
-        return ret;
-    }
-#endif
 #define ARRAY_ACCESS(row, column) (((row) * (nelem_ * 2 - row - 1)) / 2 + column - (row + 1))
+    INLINE size_t index(size_t row, size_t column) const {
+        return row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row);
+    }
+#undef ARRAY_ACCESS
     INLINE value_type &operator()(size_t row, size_t column) {
         if(__builtin_expect(row == column, 0)) return default_value_;
-        return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
+        return data_[index(row, column)];
     }
     INLINE const value_type &operator()(size_t row, size_t column) const {
         if(__builtin_expect(row == column, 0)) return default_value_;
-        return data_[row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row)];
+        return data_[index(row, column)];
     }
     pointer_type row_ptr(size_t row) {
         auto ret = data_.data() + nelem_ * row - (row * (row + 1) / 2);
@@ -228,12 +213,17 @@ public:
     std::pair<const_pointer_type, size_t> row_span(size_t i) const {
         return std::make_pair(row_ptr(i), nelem_ - i - 1);
     }
-#undef ARRAY_ACCESS
     value_type &operator[](size_t index) {
        return data_[index];
     }
     const value_type &operator[](size_t index) const {
        return data_[index];
+    }
+    value_type &operator[](std::pair<size_t, size_t> &idx) {
+       return data_[index(idx.first, idx.second)];
+    }
+    const value_type &operator[](std::pair<size_t, size_t> &idx) const {
+       return data_[index(idx.first, idx.second)];
     }
     void resize(size_t new_size) {
         if(new_size == nelem_) return; // Already done! Aren't we fast?
@@ -273,7 +263,7 @@ public:
             }
             gzputc(fp, '\n');
         }
-        std::array<std::array<char, 5>, 2> fmts{{'%','l','f','\n','\0'}, {'%','l','f','\t','\0'}};
+        std::array<std::array<char, 5>, 2> fmts{{{'%','l','f','\n','\0'}, {'%','l','f','\t','\0'}}};
         if(use_scientific) fmts[0][2] = fmts[1][2] = 'e';
         for(unsigned i(0); i < nelem_; ++i) {
             if(labels) {
