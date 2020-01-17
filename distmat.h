@@ -4,6 +4,7 @@
 #include <vector>
 #include <cassert>
 #include <array>
+#include <system_error>
 #include <cstdlib>
 #include <stdexcept>
 #include <cstdint>
@@ -44,6 +45,7 @@ constexpr std::size_t size(const T (&array)[N]) noexcept
 
 
 namespace dm {
+using std::fputc;
 
 template<typename T> inline std::string to_string(T x) {return std::to_string(x);}
 template<> inline std::string to_string<__uint128_t>(__uint128_t num)
@@ -315,11 +317,18 @@ public:
         return ret;
     }
     size_t write(std::FILE *fp) const {
-        size_t ret = std::fputc(magic_number(), fp);
+        if(__builtin_expect(fputc(magic_number(), fp) != magic_number(), 0))
+            throw std::system_error(std::ferror(fp), std::system_category(), "Failed to write magic number to file");
         std::fflush(fp);
         int fn = fileno(fp);
-        ret += ::write(fn, &nelem_, sizeof(nelem_));
-        ret += ::write(fn, data_.data(), sizeof(ArithType) * data_.size());
+        size_t ret = 1;
+        if(::write(fn, &nelem_, sizeof(nelem_)) != sizeof(nelem_))
+            throw std::system_error(errno, std::system_category(), ::strerror(errno));
+        ret += sizeof(nelem_);
+        const ssize_t nb =  sizeof(ArithType) * data_.size();
+        if(::write(fn, data_.data(), nb) != nb)
+            throw std::system_error(errno, std::system_category(), ::strerror(errno));
+        ret += sizeof(ArithType) * data_.size();
         return ret;
     }
     void read(const char *path) {
