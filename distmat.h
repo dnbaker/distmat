@@ -235,7 +235,7 @@ public:
         std::fill(std::begin(data_), std::end(data_), static_cast<value_type>(-1)); // Invalid
     }
     void write(const std::string &path) const {
-        return this->write(path.data());
+        this->write(path.data());
     }
     std::string to_string(bool use_scientific=false, const std::vector<std::string> *labels=nullptr) const {
         std::string ret;
