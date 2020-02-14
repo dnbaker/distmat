@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <cstdint>
 #include <limits>
+#include <fstream>
 #include <cinttypes>
 #if ZWRAP_USE_ZSTD
 #  include "zstd_zlibwrapper.h"
@@ -356,5 +357,23 @@ public:
             (std::memcmp(data_.data(), o.data_.data(), data_.size() * sizeof(ArithType)) == 0);
     }
 };
+
+template<typename ArithType=float,
+         size_t DefaultValue=0,
+         bool force=false>
+inline std::ostream &operator<<(std::ostream &os, const DistanceMatrix<ArithType, DefaultValue, force> &m) {
+    const size_t nr = m.size();
+    for(size_t i = 0; i < nr; ++i) {
+        auto rowspan = m.row_span(i);
+        os << "Row " << i << "/" << nr << ":( ";
+        for(size_t j = 0; j < rowspan.second; ++j) {
+            os << rowspan.first[j] << '\t';
+        }
+        os << ") \n";
+    }
+    return os;
+}
+
+
 
 } // namespace dm

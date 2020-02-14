@@ -1,4 +1,5 @@
 #include "distmat.h"
+#include <iostream>
 #include <random>
 
 template<typename T>
@@ -37,6 +38,15 @@ int main() {
     test_span<int16_t>(n);
     test_span<int32_t>(n);
     test_span<int64_t>(n);
+    dm::DistanceMatrix<float> mat(n), mat2(n);
+    std::mt19937_64 mt(n + sizeof(float));
+    std::gamma_distribution<double> gamrock(1);
+    for(size_t i = 0; i < n; ++i) {
+        for(size_t j = i + 1; j < n; ++j) {
+            mat(i, j) = gamrock(mt);
+        }
+    }
+    std::cerr << mat << '\n';
     n = 500;
     test_span<double>(n);
     test_span<float>(n);
