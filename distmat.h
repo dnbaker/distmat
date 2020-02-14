@@ -352,6 +352,8 @@ public:
         gzclose(fp);
     }
     size_t size() const {return nelem_;}
+    size_t rows() const {return nelem_;}
+    size_t columns() const {return nelem_;}
     bool operator==(const DistanceMatrix &o) const {
         return nelem_ == o.nelem_ &&
             (std::memcmp(data_.data(), o.data_.data(), data_.size() * sizeof(ArithType)) == 0);
