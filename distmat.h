@@ -363,6 +363,19 @@ public:
             (std::memcmp(data_.data(), o.data_.data(), data_.size() * sizeof(ArithType)) == 0);
     }
 };
+template<typename T>
+struct is_distance_matrix: public std::false_type {};
+template<typename ArithType,
+         size_t DefaultValue,
+         bool force>
+struct is_distance_matrix<DistanceMatrix<ArithType, DefaultValue, force>>:
+    public std::true_type {};
+
+#if __cplusplus >= 201703L
+template<typename T>
+constexpr bool is_distance_matrix_v = is_distance_matrix<T>::value;
+#endif
+
 
 template<typename ArithType=float,
          size_t DefaultValue=0,
