@@ -235,6 +235,10 @@ public:
         nelem_ = new_size;
         std::fill(std::begin(data_), std::end(data_), static_cast<value_type>(-1)); // Invalid
     }
+    auto begin() {return data_.begin();}
+    auto end()   {return data_.end();}
+    auto begin() const {return data_.begin();}
+    auto end()   const {return data_.end();}
     void write(const std::string &path) const {
         this->write(path.data());
     }
