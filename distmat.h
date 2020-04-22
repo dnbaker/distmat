@@ -79,7 +79,13 @@ template<> struct numeric_limits<__uint128_t> {
     static constexpr __uint128_t min() {return __uint128_t(0);}
 };
 template<> struct numeric_limits<__int128_t> {
-    static constexpr __int128_t max() {return  (__int128) (((unsigned __int128) 1 << ((__SIZEOF_INT128__ * __CHAR_BIT__) - 1)) - 1);}
+    static constexpr __int128_t max() {
+        __uint128_t tmp = 1;
+        tmp <<= ((__SIZEOF_INT128__ * __CHAR_BIT__) - 1);
+        tmp -= 1;
+        __int128_t ret = tmp;
+        return ret;
+    }
     static constexpr __int128_t min() {return (-max() - 1);}
 };
 
