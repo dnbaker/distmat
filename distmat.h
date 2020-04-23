@@ -183,6 +183,7 @@ class DistanceMatrix {
     std::unique_ptr<ArithType> heapdata_;
     std::unique_ptr<mio::mmap_sink> sink_;
     std::unique_ptr<std::FILE *, FDelete> backing_fp_;
+    std::string mempath;
 public:
     static constexpr const char *magic_string() {return more_magic::MAGIC_NUMBER<ArithType>::name();}
     static constexpr more_magic::MagicNumber magic_number() {return more_magic::MAGIC_NUMBER<ArithType>::magic_number;}
@@ -191,7 +192,7 @@ public:
     using const_pointer_type = const ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
     void set_default_value(ArithType val) {default_value_ = val;}
-    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE): nelem_(n), default_value_(default_value) {
+    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE, std::string path=std::string()): nelem_(n), default_value_(default_value), mempath(path) {
         data_ = allocate(num_entries());
     }
     DistanceMatrix(): DistanceMatrix(size_t(0), DEFAULT_VALUE) {}
@@ -205,7 +206,11 @@ public:
         ArithType *ret;
         if(mem_strat == DM_MMAP) {
             std::FILE **fp = new std::FILE *;
-            *fp = std::tmpfile();
+            if(mempath.size()) {
+                if((*fp = std::fopen(mempath.data(), "rb")) == nullptr) throw std::bad_alloc();
+            } else {
+                if((*fp = std::tmpfile()) == nullptr) throw std::bad_alloc();
+            }
             backing_fp_.reset(fp);
             int fd = ::fileno(*fp);
             ::ftruncate(fd, nelem * sizeof(ArithType));
