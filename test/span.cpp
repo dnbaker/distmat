@@ -2,9 +2,17 @@
 #include <iostream>
 #include <random>
 
+template<typename T, bool use_mmap>
+void test_span_impl(size_t n);
 template<typename T>
 void test_span(size_t n) {
-    dm::DistanceMatrix<T> mat(n), mat2(n);
+    test_span_impl<T, false>(n);
+    test_span_impl<T, true>(n);
+}
+
+template<typename T, bool use_mmap>
+void test_span_impl(size_t n) {
+    dm::DistanceMatrix<T, 0, static_cast<dm::MemoryStrategy>(use_mmap)> mat(n), mat2(n);
     std::mt19937_64 mt(n + sizeof(T) + std::is_integral<T>::value);
     std::gamma_distribution<double> gamrock(1);
     for(size_t i = 0; i < n; ++i) {

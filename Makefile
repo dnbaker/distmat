@@ -4,7 +4,7 @@ PYTHON?=$(shell which python)
 PYCONFIG?=$(PYTHON)-config
 EXT=$(shell $(PYCONFIG) --extension-suffix)
 INCLUDE+=
-PYINCLUDE=$(shell $(PYCONFIG) --includes) -I. -Ipybind11/include
+PYINCLUDE=$(shell $(PYCONFIG) --includes) -I. -Ipybind11/include $(INCLUDE)
 LIB=-lz
 PYLIB=-L$(shell $(PYCONFIG) --prefix)/lib $(shell $(PYCONFIG) --libs)  #$(shell $(PYCONFIG) --ldflags)
 ifeq ($(shell uname),Darwin)
