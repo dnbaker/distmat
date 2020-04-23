@@ -12,7 +12,7 @@ ifeq ($(shell uname),Darwin)
 else
     UDSTR=
 endif
-FLAGS=$(INCLUDE) -std=c++14 -O3 -march=native $(LIB) $(UDSTR)
+FLAGS=$(INCLUDE) -std=c++14 -O3 -march=native $(LIB)
 
 PREFIX?=/usr/local
 
@@ -26,7 +26,7 @@ all: printmat serialization span
 
 python: distmat_py.cpp
 	echo "TODO: rewrite with setup.py" && \
-	$(CXX) $(FLAGS) -shared -fPIC $(PYINCLUDE) $< -o distmat$(EXT) $(LIB) $(PYLIB) && touch python 
+	$(CXX) $(FLAGS) -shared -fPIC $(PYINCLUDE) $(UDSTR) $< -o distmat$(EXT) $(LIB) $(PYLIB) && touch python
 
 install: distmat.h
 	install -d $(DESTDIR)$(PREFIX)/include/distmat && \

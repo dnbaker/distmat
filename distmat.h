@@ -213,7 +213,8 @@ public:
             }
             backing_fp_.reset(fp);
             int fd = ::fileno(*fp);
-            ::ftruncate(fd, nelem * sizeof(ArithType));
+            if(auto rc = ::ftruncate(fd, nelem * sizeof(ArithType)); rc)
+                throw std::system_error(errno, std::system_category(), "Failed to resize file");
             sink_.reset(new mio::mmap_sink(fd));
             ret = reinterpret_cast<ArithType *>(sink_->data());
         } else if(mem_strat == DM_DEFAULT) {
