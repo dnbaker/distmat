@@ -213,7 +213,12 @@ public:
             }
             backing_fp_.reset(fp);
             int fd = ::fileno(*fp);
+#if __cplusplus >= 201703L
             if(auto rc = ::ftruncate(fd, nelem * sizeof(ArithType)); rc)
+#else
+            auto rc = ::ftruncate(fd, nelem * sizeof(ArithType));
+            if(rc)
+#endif
                 throw std::system_error(errno, std::system_category(), "Failed to resize file");
             sink_.reset(new mio::mmap_sink(fd));
             ret = reinterpret_cast<ArithType *>(sink_->data());
