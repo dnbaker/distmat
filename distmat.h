@@ -163,6 +163,12 @@ DEC_MAGIC(__int128_t,"int128_t", INT128_T);
  * or individual entries with (i, j) notation (like Eigen/Blaze/&c.)
  * You can set the default value with set_default_value.
  *
+ *
+ * Defaults to in-memory storage. This can be changed by altering MemoryStrategy to DM_MMAP.
+ * In this case, standard use maps this to a std::tmpfile, unless the path is provided
+ * in the constructor as mempath, at which place the file will be created.
+ * The argument delete_file_ will delete the mmap'd file at destruction, u
+ *
 */
 template<typename ArithType=float,
          size_t DefaultValue=0,
@@ -173,8 +179,7 @@ template<typename ArithType=float,
 class DistanceMatrix {
     struct FDelete {
         void operator()(const void *ptr) const {
-            std::fclose(*static_cast<std::FILE **>(const_cast<void *>(ptr)));
-            ::operator delete(const_cast<void *>(ptr));
+            std::fclose(static_cast<std::FILE *>(const_cast<void *>(ptr)));
         }
     };
     ArithType *data_;
@@ -182,8 +187,9 @@ class DistanceMatrix {
     ArithType default_value_;
     std::unique_ptr<ArithType> heapdata_;
     std::unique_ptr<mio::mmap_sink> sink_;
-    std::unique_ptr<std::FILE *, FDelete> backing_fp_;
+    std::unique_ptr<std::FILE, FDelete> backing_fp_;
     std::string mempath;
+    bool delete_file_;
 public:
     static constexpr const char *magic_string() {return more_magic::MAGIC_NUMBER<ArithType>::name();}
     static constexpr more_magic::MagicNumber magic_number() {return more_magic::MAGIC_NUMBER<ArithType>::magic_number;}
@@ -192,8 +198,22 @@ public:
     using const_pointer_type = const ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
     void set_default_value(ArithType val) {default_value_ = val;}
-    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE, std::string path=std::string()): nelem_(n), default_value_(default_value), mempath(path) {
+    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE, std::string path=std::string(), bool delete_file=true): nelem_(n), default_value_(default_value), mempath(path), delete_file_(delete_file) {
         data_ = allocate(num_entries());
+    }
+    ~DistanceMatrix() {
+        if(mem_strat == DM_MMAP) {
+            if(backing_fp_ && mempath.size() && delete_file_) {
+                int rc = std::system((std::string("rm ") + mempath).data());
+                if(rc) {
+                    char buf[256];
+                    throw std::system_error(rc, std::system_category(), std::string(buf,
+                        std::sprintf(buf, "Failed to delete file. return code %d. Exit status %d. Stop code: %d. Signal code: %d\n",
+                                     rc, WEXITSTATUS(rc), WSTOPSIG(rc), WTERMSIG(rc))
+                    ));
+                }
+            }
+        }
     }
     DistanceMatrix(): DistanceMatrix(size_t(0), DEFAULT_VALUE) {}
     pointer_type       data()       {return data_;}
@@ -205,14 +225,14 @@ public:
     ArithType *allocate(size_t nelem) {
         ArithType *ret;
         if(mem_strat == DM_MMAP) {
-            std::FILE **fp = new std::FILE *;
+            std::FILE *fp;
             if(mempath.size()) {
-                if((*fp = std::fopen(mempath.data(), "rb")) == nullptr) throw std::bad_alloc();
+                if((fp = std::fopen(mempath.data(), "rb")) == nullptr) throw std::bad_alloc();
             } else {
-                if((*fp = std::tmpfile()) == nullptr) throw std::bad_alloc();
+                if((fp = std::tmpfile()) == nullptr) throw std::bad_alloc();
             }
             backing_fp_.reset(fp);
-            int fd = ::fileno(*fp);
+            int fd = ::fileno(fp);
 #if __cplusplus >= 201703L
             if(auto rc = ::ftruncate(fd, nelem * sizeof(ArithType)); rc)
 #else
@@ -421,10 +441,10 @@ constexpr bool is_distance_matrix_v = is_distance_matrix<T>::value;
 #endif
 
 
-template<typename ArithType=float,
-         size_t DefaultValue=0,
-         MemoryStrategy mem_strat=DM_DEFAULT,
-         bool force=false>
+template<typename ArithType,
+         size_t DefaultValue,
+         MemoryStrategy mem_strat,
+         bool force>
 inline std::ostream &operator<<(std::ostream &os, const DistanceMatrix<ArithType, DefaultValue, mem_strat, force> &m) {
     const size_t nr = m.size();
     for(size_t i = 0; i < nr; ++i) {
