@@ -206,11 +206,12 @@ public:
             if(backing_fp_ && mempath.size() && delete_file_) {
                 int rc = std::system((std::string("rm ") + mempath).data());
                 if(rc) {
-                    char buf[256];
-                    throw std::system_error(rc, std::system_category(), std::string(buf,
-                        std::sprintf(buf, "Failed to delete file. return code %d. Exit status %d. Stop code: %d. Signal code: %d\n",
-                                     rc, WEXITSTATUS(rc), WSTOPSIG(rc), WTERMSIG(rc))
-                    ));
+                    std::fprintf(stderr, "Failed to delete file. return code %d. Exit status %d. Stop code: %d. Signal code: %d\n",
+                                 rc, WEXITSTATUS(rc), WSTOPSIG(rc), WTERMSIG(rc));
+#ifdef EXIT_ON_ERROR
+                    // Default to not exiting but providing a warning message. Will exit if EXIT_ON_ERROR is defined
+                    std::exit(1);
+#endif
                 }
             }
         }
