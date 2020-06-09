@@ -394,10 +394,10 @@ public:
         if(::write(fn, &nelem_, sizeof(nelem_)) != sizeof(nelem_))
             throw std::system_error(errno, std::system_category(), ::strerror(errno));
         ret += sizeof(nelem_);
-        const ssize_t nb =  sizeof(ArithType) * data_.size();
+        const ssize_t nb =  sizeof(ArithType) * num_entries();
         if(::write(fn, data_, nb) != nb)
             throw std::system_error(errno, std::system_category(), ::strerror(errno));
-        ret += sizeof(ArithType) * data_.size();
+        ret += sizeof(ArithType) * num_entries();
         return ret;
     }
     void read(const char *path) {
