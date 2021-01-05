@@ -1,23 +1,25 @@
 #pragma once
-#include <type_traits>
-#include <cstring>
-#include <vector>
-#include <cassert>
 #include <array>
-#include <system_error>
-#include <cstdlib>
-#include <stdexcept>
-#include <cstdint>
-#include <limits>
-#include <fstream>
+#include <optional>
+#include <cassert>
 #include <cinttypes>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <system_error>
+#include <type_traits>
+#include <vector>
 #if ZWRAP_USE_ZSTD
 #  include "zstd_zlibwrapper.h"
 #else
 #  include <zlib.h>
 #endif
 #include "unistd.h"
-#include "./mio.hpp"
+#include <mio.hpp>
 
 #ifndef INLINE
 #  if defined(__GNUC__) || defined(__clang__)
@@ -47,12 +49,6 @@ constexpr std::size_t size(const T (&array)[N]) noexcept
 
 
 namespace dm {
-
-enum MemoryStrategy {
-    DM_DEFAULT,
-    DM_MMAP,
-    BY_THRESHOLD
-};
 using std::fputc;
 
 template<typename T> inline std::string to_string(T x) {return std::to_string(x);}
@@ -86,13 +82,7 @@ template<> struct numeric_limits<__uint128_t> {
     static constexpr __uint128_t min() {return __uint128_t(0);}
 };
 template<> struct numeric_limits<__int128_t> {
-    static constexpr __int128_t max() {
-        __uint128_t tmp = 1;
-        tmp <<= ((__SIZEOF_INT128__ * __CHAR_BIT__) - 1);
-        tmp -= 1;
-        __int128_t ret = tmp;
-        return ret;
-    }
+    static constexpr __int128_t max() {return  (__int128) (((unsigned __int128) 1 << ((__SIZEOF_INT128__ * __CHAR_BIT__) - 1)) - 1);}
     static constexpr __int128_t min() {return (-max() - 1);}
 };
 
@@ -157,39 +147,26 @@ DEC_MAGIC(__int128_t,"int128_t", INT128_T);
 
 #undef DEC_MAGIC
 
+
 /* *
  * DistanceMatrix holds an upper-triangular matrix.
  * You can access rows with row_span()
  * or individual entries with (i, j) notation (like Eigen/Blaze/&c.)
  * You can set the default value with set_default_value.
  *
- *
- * Defaults to in-memory storage. This can be changed by altering MemoryStrategy to DM_MMAP.
- * In this case, standard use maps this to a std::tmpfile, unless the path is provided
- * in the constructor as mempath, at which place the file will be created.
- * The argument delete_file_ will delete the mmap'd file at destruction, u
- *
 */
 template<typename ArithType=float,
          size_t DefaultValue=0,
-         MemoryStrategy mem_strat=DM_DEFAULT,
          bool force=false,
          typename=typename std::enable_if<std::is_arithmetic<ArithType>::value || std::is_same<ArithType,__uint128_t>::value || std::is_same<ArithType,__int128_t>::value || force>::type
          >
 class DistanceMatrix {
-    struct FDelete {
-        void operator()(const void *ptr) const {
-            std::fclose(static_cast<std::FILE *>(const_cast<void *>(ptr)));
-        }
-    };
     ArithType *data_;
-    uint64_t  nelem_;
+    std::unique_ptr<ArithType> dup_;
+    uint64_t  nelem_, num_entries_;
     ArithType default_value_;
-    std::unique_ptr<ArithType> heapdata_;
-    std::unique_ptr<mio::mmap_sink> sink_;
-    std::unique_ptr<std::FILE, FDelete> backing_fp_;
-    std::string mempath;
-    bool delete_file_;
+    std::unique_ptr<mio::mmap_sink> mfbp_;
+
 public:
     static constexpr const char *magic_string() {return more_magic::MAGIC_NUMBER<ArithType>::name();}
     static constexpr more_magic::MagicNumber magic_number() {return more_magic::MAGIC_NUMBER<ArithType>::magic_number;}
@@ -198,62 +175,33 @@ public:
     using const_pointer_type = const ArithType *;
     static constexpr ArithType DEFAULT_VALUE = static_cast<ArithType>(DefaultValue);
     void set_default_value(ArithType val) {default_value_ = val;}
-    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE, std::string path=std::string(), bool delete_file=true): nelem_(n), default_value_(default_value), mempath(path), delete_file_(delete_file) {
-        data_ = allocate(num_entries());
-    }
-    ~DistanceMatrix() {
-        if(mem_strat == DM_MMAP) {
-            if(backing_fp_ && mempath.size() && delete_file_) {
-                int rc = std::system((std::string("rm ") + mempath).data());
-                if(rc) {
-                    std::fprintf(stderr, "Failed to delete file. return code %d. Exit status %d. Stop code: %d. Signal code: %d\n",
-                                 rc, WEXITSTATUS(rc), WSTOPSIG(rc), WTERMSIG(rc));
-#ifdef EXIT_ON_ERROR
-                    // Default to not exiting but providing a warning message. Will exit if EXIT_ON_ERROR is defined
-                    std::exit(1);
-#endif
-                }
-            }
+    DistanceMatrix(size_t n, ArithType default_value=DEFAULT_VALUE, ArithType *prevdat=static_cast<ArithType *>(nullptr)):
+        nelem_(n), num_entries_((nelem_ * (nelem_ - 1)) >> 1), default_value_(default_value)
+    {
+        if(prevdat) data_ = prevdat;
+        else {
+            data_ = new ArithType[num_entries_];
+            dup_.reset(data_);
         }
     }
     DistanceMatrix(): DistanceMatrix(size_t(0), DEFAULT_VALUE) {}
     pointer_type       data()       {return data_;}
     const_pointer_type data() const {return data_;}
     DistanceMatrix(DistanceMatrix &&other) = default;
-    DistanceMatrix(const char *path, ArithType default_value=DEFAULT_VALUE): nelem_(0), default_value_(default_value) {
-        this->read(path);
-    }
-    ArithType *allocate(size_t nelem) {
-        ArithType *ret;
-        if(mem_strat == DM_MMAP) {
-            std::FILE *fp;
-            if(mempath.size()) {
-                if((fp = std::fopen(mempath.data(), "rb")) == nullptr) throw std::bad_alloc();
-            } else {
-                if((fp = std::tmpfile()) == nullptr) throw std::bad_alloc();
-            }
-            backing_fp_.reset(fp);
-            int fd = ::fileno(fp);
-#if __cplusplus >= 201703L
-            if(auto rc = ::ftruncate(fd, nelem * sizeof(ArithType)); rc)
-#else
-            auto rc = ::ftruncate(fd, nelem * sizeof(ArithType));
-            if(rc)
-#endif
-                throw std::system_error(errno, std::system_category(), "Failed to resize file");
-            sink_.reset(new mio::mmap_sink(fd));
-            ret = reinterpret_cast<ArithType *>(sink_->data());
-        } else if(mem_strat == DM_DEFAULT) {
-            heapdata_.reset(new ArithType[nelem]);
-            ret = heapdata_.get();
-        } else {
-            throw std::runtime_error("Not implemented");
-        }
-        return ret;
+    DistanceMatrix(const char *path, size_t nelem=0, ArithType default_value=DEFAULT_VALUE, ArithType *prevdat=nullptr, bool forcestream=false): nelem_(nelem), default_value_(default_value) {
+        this->read(path, prevdat, forcestream);
     }
     auto nelem() const {return nelem_;}
-    DistanceMatrix(const DistanceMatrix &other) = delete;
-    size_t num_entries() const {return (nelem_ * (nelem_ - 1)) >> 1;}
+    DistanceMatrix(const DistanceMatrix &other, ArithType *prevdat=static_cast<ArithType *>(nullptr)):
+            nelem_(other.nelem_),
+            num_entries_(other.num_entries_),
+            default_value_(other.default_value_)
+    {
+        if(prevdat) data_ = prevdat;
+        else        data_ = new ArithType[num_entries_], dup_.reset(data_);
+        std::memcpy(data_, other.data_, num_entries_ * sizeof(value_type));
+    }
+    size_t num_entries() const {return num_entries_;}
 #define ARRAY_ACCESS(row, column) (((row) * (nelem_ * 2 - row - 1)) / 2 + column - (row + 1))
     INLINE size_t index(size_t row, size_t column) const {
         return row < column ? ARRAY_ACCESS(row, column): ARRAY_ACCESS(column, row);
@@ -268,10 +216,12 @@ public:
         return data_[index(row, column)];
     }
     pointer_type row_ptr(size_t row) {
-        return data_ + nelem_ * row - (row * (row + 1) / 2);
+        auto ret = data_ + nelem_ * row - (row * (row + 1) / 2);
+        return ret;
     }
     const_pointer_type row_ptr(size_t row) const {
-        return data_ + nelem_ * row - (row * (row + 1) / 2);
+        auto ret = data_ + nelem_ * row - (row * (row + 1) / 2);
+        return ret;
     }
     std::pair<pointer_type, size_t> row_span(size_t i) {
         return std::make_pair(row_ptr(i), nelem_ - i - 1);
@@ -294,15 +244,18 @@ public:
     void resize(size_t new_size) {
         if(new_size == nelem_) return; // Already done! Aren't we fast?
         if(new_size < nelem_) throw std::runtime_error("NotImplemented: shrinking.");
+        const auto nsz = (new_size * (new_size - 1)) >> 1;
+        if(!dup_) throw std::runtime_error("Can't resize external data"); // Can't resize externl
         nelem_ = new_size;
-        data_ = allocate(num_entries());
-        // At least one number will be even, so we can just bitshift.
-        std::fill(data_, data_ + num_entries(), static_cast<value_type>(-1)); // Invalid
+        num_entries_ = nsz;
+        dup_.reset(new ArithType[num_entries_]);
+        std::fill_n(data_, num_entries_, static_cast<value_type>(-1));
+        // Invalid -- to ensure data is calculated before use
     }
     auto begin() {return data_;}
-    auto end()   {return data_ + num_entries();}
+    auto end()   {return data_ + num_entries_;}
     auto begin() const {return data_;}
-    auto end()   const {return data_ + num_entries();}
+    auto end()   const {return data_ + num_entries_;}
     void write(const std::string &path) const {
         this->write(path.data());
     }
@@ -382,7 +335,7 @@ public:
     size_t write(gzFile fp) const {
         size_t ret = gzputc(fp, magic_number());
         ret += gzwrite(fp, &nelem_, sizeof(nelem_));
-        ret += gzwrite(fp, data_, sizeof(ArithType) * num_entries());
+        ret += gzwrite(fp, data_, sizeof(ArithType) * num_entries_);
         return ret;
     }
     size_t write(std::FILE *fp) const {
@@ -391,49 +344,83 @@ public:
         std::fflush(fp);
         int fn = fileno(fp);
         size_t ret = 1;
-        if(::write(fn, &nelem_, sizeof(nelem_)) != sizeof(nelem_))
+        if(::write(fn, &nelem_, sizeof(nelem_)) != sizeof(nelem_)) {
+            std::fprintf(stderr, "Wrote wrong nelem\n");
             throw std::system_error(errno, std::system_category(), ::strerror(errno));
+        }
         ret += sizeof(nelem_);
-        const ssize_t nb =  sizeof(ArithType) * num_entries();
-        if(::write(fn, data_, nb) != nb)
+        const ssize_t nb =  sizeof(ArithType) * num_entries_;
+        if(::write(fn, data_, nb) != nb) {
+            std::fprintf(stderr, "Wrote wrong\n");
             throw std::system_error(errno, std::system_category(), ::strerror(errno));
-        ret += sizeof(ArithType) * num_entries();
+        }
+        ret += sizeof(ArithType) * num_entries_;
         return ret;
     }
-    void read(const char *path) {
+    void read(const char *path, ArithType *prevdat=static_cast<ArithType *>(nullptr), bool forcestream=false) {
+        using more_magic::MagicNumber;
         path = std::strcmp(path, "-") ? path: "/dev/stdin";
-        gzFile fp = gzopen(path, "rb");
+        std::FILE *fp = std::fopen(path, "r");
         if(fp == nullptr) throw std::runtime_error(std::string("Could not open file at ") + path);
-        more_magic::MagicNumber magic = more_magic::MagicNumber(gzgetc(fp));
+        int fd = ::fileno(fp);
+        const bool isstream = ::isatty(fd) || forcestream;
+        const auto fc = std::fgetc(fp);
+        std::ungetc(fc, fp);
+        std::fclose(fp);
+        fp = std::fopen(path, "r");
+        fd = ::fileno(fp);
+        gzFile gzfp = gzdopen(fd, "r");
+        const MagicNumber magic = MagicNumber(gzgetc(gzfp));
         if(magic != magic_number()) {
             char buf[256];
             std::sprintf(buf, "Wrong magic number read from file (%d/%s), expected (%d/%s)\n", magic, more_magic::arr[magic], magic_number(), magic_string());
             throw std::runtime_error(buf);
         }
-        if(gzread(fp, &nelem_, sizeof(nelem_)) != int(sizeof(nelem_))) throw std::runtime_error("Failed to read from file");
-#if !NDEBUG
-        std::fprintf(stderr, "Number of elements: %zu\n", nelem_);
-        std::fprintf(stderr, "Number of entries: %zu\n", num_entries());
-#endif
-        data_ = allocate(num_entries());
-        gzread(fp, data_, sizeof(ArithType) * num_entries());
-        gzclose(fp);
+        gzread(gzfp, &nelem_, sizeof(nelem_));
+        num_entries_ = ((nelem_ - 1) * nelem_) >> 1;
+        const bool is_uncompressed_file = fc == magic;
+        if(isstream || !is_uncompressed_file) {
+            // If this is streaming, or the file is compressed,
+            // copy the memory out
+            if(prevdat) data_ = prevdat;
+            else {
+                dup_.reset(new ArithType[num_entries_]);
+                data_ = dup_.get();
+            }
+            gzread(gzfp, data_, sizeof(ArithType) * num_entries_);
+            gzclose(gzfp);
+        } else {
+            if(::access(path, F_OK) == -1) {
+                // If file does not exist,
+                // open a new file on disk and resize it.
+                std::FILE *ofp = std::fopen(path, "wb");
+                const size_t nb = 1 + sizeof(num_entries_) + sizeof(ArithType) * num_entries_;
+                std::fputc(magic_number(), ofp);
+                if(std::fwrite(&nelem_, sizeof(nelem_), 1, ofp) != 1) throw std::runtime_error("Failed to write nelem to disk");
+                // Resize
+                ::ftruncate(::fileno(ofp), nb);
+                std::fclose(ofp);
+            }
+            mfbp_.reset(new mio::mmap_sink(path));
+            data_ = reinterpret_cast<ArithType *>((*mfbp_).data() + 1 + sizeof(nelem_));
+        }
+        std::fclose(fp);
     }
     size_t size() const {return nelem_;}
     size_t rows() const {return nelem_;}
     size_t columns() const {return nelem_;}
     bool operator==(const DistanceMatrix &o) const {
         return nelem_ == o.nelem_ &&
-            (std::memcmp(data_, o.data_, num_entries() * sizeof(ArithType)) == 0);
+            (std::memcmp(data_, o.data_, num_entries_ * sizeof(ArithType)) == 0);
     }
 };
+
 template<typename T>
 struct is_distance_matrix: public std::false_type {};
 template<typename ArithType,
          size_t DefaultValue,
-         MemoryStrategy mem_strat,
          bool force>
-struct is_distance_matrix<DistanceMatrix<ArithType, DefaultValue, mem_strat, force>>:
+struct is_distance_matrix<DistanceMatrix<ArithType, DefaultValue, force>>:
     public std::true_type {};
 
 #if __cplusplus >= 201703L
@@ -442,11 +429,10 @@ constexpr bool is_distance_matrix_v = is_distance_matrix<T>::value;
 #endif
 
 
-template<typename ArithType,
-         size_t DefaultValue,
-         MemoryStrategy mem_strat,
-         bool force>
-inline std::ostream &operator<<(std::ostream &os, const DistanceMatrix<ArithType, DefaultValue, mem_strat, force> &m) {
+template<typename ArithType=float,
+         size_t DefaultValue=0,
+         bool force=false>
+inline std::ostream &operator<<(std::ostream &os, const DistanceMatrix<ArithType, DefaultValue, force> &m) {
     const size_t nr = m.size();
     for(size_t i = 0; i < nr; ++i) {
         auto rowspan = m.row_span(i);
