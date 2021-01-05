@@ -1,6 +1,5 @@
 #pragma once
 #include <array>
-#include <optional>
 #include <cassert>
 #include <cinttypes>
 #include <cstdint>
@@ -440,7 +439,7 @@ inline std::ostream &operator<<(std::ostream &os, const DistanceMatrix<ArithType
         for(size_t j = 0; j < rowspan.second; ++j) {
             os << rowspan.first[j] << '\t';
         }
-        os << ") \n";
+        os << ")\n";
     }
     return os;
 }
