@@ -18,7 +18,7 @@
 #  include <zlib.h>
 #endif
 #include "unistd.h"
-#include <mio.hpp>
+#include "./mio.hpp"
 
 #ifndef INLINE
 #  if defined(__GNUC__) || defined(__clang__)
