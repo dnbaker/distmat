@@ -17,7 +17,8 @@ FLAGS=$(INCLUDE) -std=c++14 -O3 -march=native $(LIB)
 PREFIX?=/usr/local
 
 
-all: printmat serialization span
+all: printmat test
+test: serialization span dmtest
 %: src/%.cpp distmat.h
 	$(CXX) $(FLAGS) $< -o $@ -I. -lz
 

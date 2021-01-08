@@ -12,6 +12,7 @@
 #include <system_error>
 #include <type_traits>
 #include <vector>
+#include <thread>
 #if ZWRAP_USE_ZSTD
 #  include "zstd_zlibwrapper.h"
 #else
@@ -155,10 +156,7 @@ DEC_MAGIC(__int128_t,"int128_t", INT128_T);
  *
 */
 template<typename ArithType=float,
-         size_t DefaultValue=0,
-         bool force=false,
-         typename=typename std::enable_if<std::is_arithmetic<ArithType>::value || std::is_same<ArithType,__uint128_t>::value || std::is_same<ArithType,__int128_t>::value || force>::type
-         >
+         size_t DefaultValue=0>
 class DistanceMatrix {
     ArithType *data_;
     std::unique_ptr<ArithType> dup_;
@@ -190,10 +188,10 @@ public:
     DistanceMatrix(const char *path, size_t nelem=0, ArithType default_value=DEFAULT_VALUE, ArithType *prevdat=nullptr, bool forcestream=false):
         nelem_(nelem), default_value_(default_value)
     {
-        //std::fprintf(stderr, "path: %s. nelem: %zu. defv: %g\n", path, nelem_, double(default_value_));
-         if(::access(path, F_OK) == -1 && nelem > 0) {
+        std::fprintf(stderr, "path: %s. nelem: %zu. defv: %g\n", path, nelem_, double(default_value_));
+        if(!forcestream && ::access(path, F_OK) == -1 && nelem > 0) {
             num_entries_ = (nelem_ * (nelem_ - 1)) >> 1;
-            //std::fprintf(stderr, "File does not exist, so create it. nelem = %zu, num entries = %zu\n", nelem_, num_entries_);
+            std::fprintf(stderr, "File does not exist, so create it. nelem = %zu, num entries = %zu\n", nelem_, num_entries_);
             // If file does not exist,
             // open a new file on disk and resize it.
             std::FILE *ofp = std::fopen(path, "wb");
@@ -206,6 +204,7 @@ public:
             std::fclose(ofp);
             mfbp_.reset(new mio::mmap_sink(path));
             data_ = reinterpret_cast<ArithType *>((*mfbp_).data() + 1 + sizeof(nelem_));
+            std::fprintf(stderr, "Created new file of %zu bytes, %zu nelem, and %zu entries\n", nb, nelem_, num_entries_);
         } else read(path, prevdat, forcestream);
     }
     auto nelem() const {return nelem_;}
@@ -374,7 +373,7 @@ public:
     }
     void read(const char *path, ArithType *prevdat=static_cast<ArithType *>(nullptr), bool forcestream=false) {
         // Else, open from file on disk
-        //std::fprintf(stderr, "Starting read with path = %s, fs = %d, and nelem = %zu\n", path, forcestream, nelem_);
+        std::fprintf(stderr, "Starting read with path = %s, fs = %d, and nelem = %zu\n", path, forcestream, nelem_);
         using more_magic::MagicNumber;
         path = std::strcmp(path, "-") ? path: "/dev/stdin";
         std::FILE *fp = std::fopen(path, "r");
@@ -393,8 +392,13 @@ public:
             std::sprintf(buf, "Wrong magic number read from file (%d/%s), expected (%d/%s)\n", magic, more_magic::arr[magic], magic_number(), magic_string());
             throw std::runtime_error(buf);
         }
-        gzread(gzfp, &nelem_, sizeof(nelem_));
+        if(int rc = gzread(gzfp, &nelem_, sizeof(nelem_)) != sizeof(nelem_)) {
+            int gret;
+            const char *os = gzerror(gzfp, &gret);
+            throw std::runtime_error(std::string("Could not read nelem from path") + std::to_string(rc) + ":" + os);
+        }
         num_entries_ = ((nelem_ - 1) * nelem_) >> 1;
+        std::fprintf(stderr, "Parsed from file: %zu nelem, %zu entries\n", nelem_, num_entries_);
         // If this is streaming, or the file is compressed,
         // copy the memory out
         if(prevdat) data_ = prevdat;
@@ -424,12 +428,35 @@ public:
     }
 };
 
+template<typename T, typename Func, size_t defv>
+void parallel_fill(DistanceMatrix<T, defv> &dm, size_t nitems, const Func &oracle) {
+    T *dmp = dm.data();
+    if(int rc = ::madvise(static_cast<void *>(dmp), dm.num_entries() * sizeof(float), MADV_SEQUENTIAL))
+        throw std::system_error(errno, std::system_category(), std::strerror(rc));
+    std::thread sub;
+    for(size_t i = 0; i < nitems - 1; ++i) {
+        auto s = dm.row_span(i);
+        auto up = std::make_unique<T[]>(s.second);
+#ifdef _OPENMP
+        #pragma omp parallel for schedule(dynamic)
+#endif
+        for(size_t idx = 0; idx < s.second; ++idx) {
+            up[idx] = oracle(idx + i + 1, i);
+        }
+        if(sub.joinable()) sub.join();
+        sub = std::thread([up=std::move(up),&dmp,n=s.second]() {
+            std::memcpy(dmp, up.get(), sizeof(T) * n);
+            dmp += n;
+        });
+    }
+    sub.join();
+}
+
 template<typename T>
 struct is_distance_matrix: public std::false_type {};
 template<typename ArithType,
-         size_t DefaultValue,
-         bool force>
-struct is_distance_matrix<DistanceMatrix<ArithType, DefaultValue, force>>:
+         size_t DefaultValue>
+struct is_distance_matrix<DistanceMatrix<ArithType, DefaultValue>>:
     public std::true_type {};
 
 #if __cplusplus >= 201703L
@@ -439,9 +466,8 @@ constexpr bool is_distance_matrix_v = is_distance_matrix<T>::value;
 
 
 template<typename ArithType=float,
-         size_t DefaultValue=0,
-         bool force=false>
-inline std::ostream &operator<<(std::ostream &os, const DistanceMatrix<ArithType, DefaultValue, force> &m) {
+         size_t DefaultValue=0>
+inline std::ostream &operator<<(std::ostream &os, const DistanceMatrix<ArithType, DefaultValue> &m) {
     const size_t nr = m.size();
     for(size_t i = 0; i < nr; ++i) {
         auto rowspan = m.row_span(i);
