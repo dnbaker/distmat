@@ -188,10 +188,8 @@ public:
     DistanceMatrix(const char *path, size_t nelem=0, ArithType default_value=DEFAULT_VALUE, ArithType *prevdat=nullptr, bool forcestream=false):
         nelem_(nelem), default_value_(default_value)
     {
-        std::fprintf(stderr, "path: %s. nelem: %zu. defv: %g\n", path, nelem_, double(default_value_));
         if(!forcestream && ::access(path, F_OK) == -1 && nelem > 0) {
             num_entries_ = (nelem_ * (nelem_ - 1)) >> 1;
-            std::fprintf(stderr, "File does not exist, so create it. nelem = %zu, num entries = %zu\n", nelem_, num_entries_);
             // If file does not exist,
             // open a new file on disk and resize it.
             std::FILE *ofp = std::fopen(path, "wb");
@@ -199,13 +197,13 @@ public:
             std::fputc(magic_number(), ofp);
             if(std::fwrite(&nelem_, sizeof(nelem_), 1, ofp) != 1) throw std::runtime_error("Failed to write nelem to disk");
             // Resize
-            //std::fprintf(stderr, "Resized to %zu bytes for %zu entries\n", nb, num_entries_);
             ::ftruncate(::fileno(ofp), nb);
             std::fclose(ofp);
             mfbp_.reset(new mio::mmap_sink(path));
             data_ = reinterpret_cast<ArithType *>((*mfbp_).data() + 1 + sizeof(nelem_));
-            std::fprintf(stderr, "Created new file of %zu bytes, %zu nelem, and %zu entries\n", nb, nelem_, num_entries_);
-        } else read(path, prevdat, forcestream);
+        } else {
+            read(path, prevdat, forcestream);
+        }
     }
     auto nelem() const {return nelem_;}
     DistanceMatrix(const DistanceMatrix &other, ArithType *prevdat=static_cast<ArithType *>(nullptr)):
@@ -373,13 +371,11 @@ public:
     }
     void read(const char *path, ArithType *prevdat=static_cast<ArithType *>(nullptr), bool forcestream=false) {
         // Else, open from file on disk
-        std::fprintf(stderr, "Starting read with path = %s, fs = %d, and nelem = %zu\n", path, forcestream, nelem_);
         using more_magic::MagicNumber;
         path = std::strcmp(path, "-") ? path: "/dev/stdin";
         std::FILE *fp = std::fopen(path, "r");
         if(fp == nullptr) throw std::runtime_error(std::string("Could not open file at ") + path);
         int fd = ::fileno(fp);
-        const bool isstream = ::isatty(fd) || forcestream;
         const auto fc = std::fgetc(fp);
         std::ungetc(fc, fp);
         std::fclose(fp);
@@ -398,7 +394,6 @@ public:
             throw std::runtime_error(std::string("Could not read nelem from path") + std::to_string(rc) + ":" + os);
         }
         num_entries_ = ((nelem_ - 1) * nelem_) >> 1;
-        std::fprintf(stderr, "Parsed from file: %zu nelem, %zu entries\n", nelem_, num_entries_);
         // If this is streaming, or the file is compressed,
         // copy the memory out
         if(prevdat) data_ = prevdat;
@@ -413,15 +408,7 @@ public:
     size_t size() const {return nelem_;}
     size_t rows() const {return nelem_;}
     size_t columns() const {return nelem_;}
-#if 0
-    DistanceMatrix &operator=(DistanceMatrix &&o) = default;
-    DistanceMatrix &operator=(const DistanceMatrix &o) {
-        if(!data_) throw std::runtime_error("data is null");
-        std::memcpy(data_, o.data_, num_entries_ * sizeof(ArithType));
-    }
-#endif
     bool operator==(const DistanceMatrix &o) const {
-        //std::fprintf(stderr, "data_: %p. o.data: %p. nelems: %zu, %zu\n", data_, o.data_, nelem_, o.nelem_);
         return nelem_ == o.nelem_ &&
             (data_ && o.data_ ? (std::memcmp(data_, o.data_, num_entries_ * sizeof(ArithType)) == 0)
                               : data_ == o.data_);
@@ -429,25 +416,58 @@ public:
 };
 
 template<typename T, typename Func, size_t defv>
-void parallel_fill(DistanceMatrix<T, defv> &dm, size_t nitems, const Func &oracle) {
+void parallel_fill(DistanceMatrix<T, defv> &dm, size_t nitems, const Func &oracle, size_t nperbatch=1) {
+    nperbatch = std::max(nperbatch, size_t(1));
     T *dmp = dm.data();
-    if(int rc = ::madvise(static_cast<void *>(dmp), dm.num_entries() * sizeof(float), MADV_SEQUENTIAL))
+    if(int rc = ::madvise(static_cast<void *>(dmp), dm.num_entries() * sizeof(T), MADV_SEQUENTIAL))
         throw std::system_error(errno, std::system_category(), std::strerror(rc));
     std::thread sub;
-    for(size_t i = 0; i < nitems - 1; ++i) {
-        auto s = dm.row_span(i);
-        auto up = std::make_unique<T[]>(s.second);
-#ifdef _OPENMP
-        #pragma omp parallel for schedule(dynamic)
-#endif
-        for(size_t idx = 0; idx < s.second; ++idx) {
-            up[idx] = oracle(idx + i + 1, i);
+    if(nperbatch <= 1) {
+        for(size_t i = 0; i < nitems - 1; ++i) {
+            auto s = dm.row_span(i);
+            auto up = std::make_unique<T[]>(s.second);
+    #ifdef _OPENMP
+            #pragma omp parallel for schedule(dynamic)
+    #endif
+            for(size_t idx = 0; idx < s.second; ++idx) {
+                up[idx] = oracle(idx + i + 1, i);
+            }
+            if(sub.joinable()) sub.join();
+            sub = std::thread([up=std::move(up),&dmp,n=s.second]() {
+                std::memcpy(dmp, up.get(), sizeof(T) * n);
+                dmp += n;
+            });
         }
-        if(sub.joinable()) sub.join();
-        sub = std::thread([up=std::move(up),&dmp,n=s.second]() {
-            std::memcpy(dmp, up.get(), sizeof(T) * n);
-            dmp += n;
-        });
+    } else {
+        const size_t nbatches = (nitems + nperbatch - 1) / nperbatch;
+        std::fprintf(stderr, "%zu batches of %zu\n", nbatches, nperbatch);
+        for(size_t bi = 0; bi < nbatches; ++bi) {
+            const size_t first_row = bi * nperbatch;
+            const size_t end_row = std::min(first_row + nperbatch, nitems); // one-past
+            const size_t batch_size = end_row - first_row;
+            auto fptr = dm.row_ptr(first_row), eptr = dm.row_ptr(end_row);
+            const size_t nelem = eptr - fptr;
+#ifndef NDEBUG
+            size_t nsum = 0;
+            for(size_t i = first_row; i < end_row; ++i) nsum += dm.row_span(i).second;
+            assert(nelem == nsum);
+#endif
+            auto up = std::make_unique<T[]>(nelem);
+#ifdef  _OPENMP
+    #pragma omp parallel for schedule(dynamic)
+#endif
+            for(size_t j = first_row; j < end_row; ++j) {
+                auto myptr = &up[dm.row_ptr(j) - fptr];
+                for(size_t k = j + 1; k < nitems; ++k) {
+                    myptr[k - j - 1] = oracle(k, j);
+                }
+            }
+            if(sub.joinable()) sub.join();
+            sub = std::thread([up=std::move(up),&dmp,nelem]() {
+                std::memcpy(dmp, up.get(), sizeof(T) * nelem);
+                dmp += nelem;
+            });
+        }
     }
     sub.join();
 }
